@@ -6,6 +6,8 @@ import {
   updateBooking,
   deleteBooking,
   getMyBookings,
+  approveBooking,
+  rejectBooking,
 } from "../controllers/bookingController.js";
 import { protect, admin } from "../middleware/authMiddleware.js";
 
@@ -21,6 +23,10 @@ router.route("/:id")
   .get(protect, getBookingById)   // Admin or owner
   .put(protect, updateBooking)    // Admin or owner
   .delete(protect, deleteBooking); // Admin or owner
+
+// Admin approval routes
+router.put("/:id/approve", protect, admin, approveBooking);
+router.put("/:id/reject", protect, admin, rejectBooking);
 
 
 export default router;

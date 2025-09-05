@@ -1,11 +1,37 @@
 import Inquiry from "../models/Inquiry.js";
+import { sendInquiryNotificationEmail, sendInquiryResponseEmail } from "../utils/emailService.js";
 
 // Create a new inquiry
 export const createInquiry = async (req, res) => {
   try {
-    const { customerName, customerEmail, customerPhone, message } = req.body;
-    const inquiry = new Inquiry({ customerName, customerEmail, customerPhone, message });
+    const { name, email, phone, subject, message, priority, relatedBooking } = req.body;
+    
+    const inquiry = new Inquiry({ 
+      name, 
+      email, 
+      phone, 
+      subject, 
+      message, 
+      priority: priority || 'medium',
+      relatedBooking 
+    });
+    
     await inquiry.save();
+    
+    // Send notification email to admin
+    try {
+      await sendInquiryNotificationEmail({
+        name,
+        email,
+        phone,
+        subject,
+        message
+      });
+    } catch (emailError) {
+      console.error('Failed to send inquiry notification email:', emailError);
+      // Don't fail the inquiry creation if email fails
+    }
+    
     res.status(201).json({ success: true, data: inquiry });
   } catch (error) {
     console.error(error);
@@ -83,6 +109,20 @@ export const addResponse = async (req, res) => {
 
     inquiry.responses.push({ message, responder: req.user._id });
     await inquiry.save();
+    
+    // Send response email to customer
+    try {
+      await sendInquiryResponseEmail({
+        name: inquiry.name,
+        email: inquiry.email,
+        subject: inquiry.subject,
+        message: inquiry.message
+      }, message, req.user.name || 'MT Umrah Team');
+    } catch (emailError) {
+      console.error('Failed to send inquiry response email:', emailError);
+      // Don't fail the response if email fails
+    }
+    
     res.json({ success: true, data: inquiry });
   } catch (error) {
     console.error(error);
@@ -97,6 +137,40 @@ export const deleteInquiry = async (req, res) => {
     if (!inquiry) return res.status(404).json({ success: false, message: "Inquiry not found" });
 
     res.json({ success: true, message: "Inquiry deleted successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Approve inquiry
+export const approveInquiry = async (req, res) => {
+  try {
+    const inquiry = await Inquiry.findById(req.params.id);
+    if (!inquiry) return res.status(404).json({ success: false, message: "Inquiry not found" });
+
+    inquiry.approvalStatus = "approved";
+    inquiry.status = "responded";
+    const updatedInquiry = await inquiry.save();
+    
+    res.json({ success: true, data: updatedInquiry });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Reject inquiry
+export const rejectInquiry = async (req, res) => {
+  try {
+    const inquiry = await Inquiry.findById(req.params.id);
+    if (!inquiry) return res.status(404).json({ success: false, message: "Inquiry not found" });
+
+    inquiry.approvalStatus = "rejected";
+    inquiry.status = "closed";
+    const updatedInquiry = await inquiry.save();
+    
+    res.json({ success: true, data: updatedInquiry });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: error.message });

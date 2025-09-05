@@ -1,6 +1,7 @@
 // src/components/Inquiries.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { http } from '../lib/http';
 import {
   Search,
@@ -24,6 +25,7 @@ type UiInquiry = {
   priority: 'low' | 'medium' | 'high' | string;
   approvalStatus?: 'pending' | 'approved' | 'rejected' | string;
   response?: string;
+  responses?: Array<{ message: string; createdAt: string; responder: string }>;
   agentId?: string;
   agentName?: string;
   createdAt?: string;
@@ -42,6 +44,7 @@ function mapInquiry(i: any): UiInquiry {
     priority: (i?.priority ?? 'low') as UiInquiry['priority'],
     approvalStatus: i?.approvalStatus,
     response: i?.response,
+    responses: i?.responses || [], // Add responses array
     agentId: i?.agentId ?? i?.agent?.id,
     agentName: i?.agentName ?? i?.agent?.name ?? '',
     createdAt: i?.createdAt,
@@ -95,9 +98,9 @@ function formatDate(dateString?: string) {
 
 const Inquiries: React.FC = () => {
   const { user } = useAuth();
+  const { inquiries, fetchInquiries } = useData();
   const isAdmin = user?.role === 'admin';
 
-  const [list, setList] = useState<UiInquiry[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
@@ -106,32 +109,17 @@ const Inquiries: React.FC = () => {
 
   const [responseText, setResponseText] = useState('');
   const [respondingTo, setRespondingTo] = useState<string | null>(null);
+  const [expandedInquiry, setExpandedInquiry] = useState<string | null>(null);
   const canEditInquiry = (inq: UiInquiry) => isAdmin || inq.agentId === (user as any)?.agentId;
 
-  const fetchInquiries = async () => {
-    setLoading(true);
-    setErr('');
-    try {
-      const url = isAdmin ? '/api/inquiries' : '/api/inquiries/my';
-      const { data } = await http.get(url);
-      const arr = Array.isArray(data) ? data : (data?.inquiries ?? []);
-      setList(arr.map(mapInquiry));
-    } catch (e: any) {
-      const msg =
-        e?.response?.data?.message ||
-        (typeof e?.response?.data === 'string' ? e.response.data : '') ||
-        e?.message ||
-        'Failed to load inquiries';
-      setErr(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Map inquiries from context to UI format
+  const list = useMemo(() => {
+    return inquiries.map(mapInquiry);
+  }, [inquiries]);
 
   useEffect(() => {
     fetchInquiries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+  }, []); // Run only once on mount
 
   const startResponse = (id: string) => {
     setRespondingTo(id);
@@ -142,44 +130,38 @@ const Inquiries: React.FC = () => {
     setResponseText('');
   };
 
+  const toggleDetails = (id: string) => {
+    setExpandedInquiry(expandedInquiry === id ? null : id);
+  };
+
   // Send response to backend
   const respond = async (inquiryId: string, text: string) => {
-    // If your backend uses PUT /api/inquiries/:id instead of /respond,
-    // replace the next line with:
-    // const { data } = await http.put(`/api/inquiries/${inquiryId}`, isAdmin ? { response: text, status: 'responded' } : { response: text });
-    const { data } = await http.put(`/api/inquiries/${inquiryId}/respond`, {
-      response: text,
-      ...(isAdmin ? { status: 'responded' } : {}), // admin can mark as responded directly
-    });
+    try {
+      const { data } = await http.post(`/api/inquiries/${inquiryId}/respond`, {
+        message: text, // Changed from 'response' to 'message' to match backend
+      });
 
-    // Prefer server response; otherwise update locally
-    const updated = mapInquiry(data?.inquiry ?? data ?? {});
-    setList((prev) => prev.map((i) => (i.id === inquiryId ? updated : i)));
+      // Update inquiry status if admin
+      if (isAdmin) {
+        await http.put(`/api/inquiries/${inquiryId}`, { status: 'responded' });
+      }
 
-    // If server returns nothing meaningful, do a soft update:
-    if (!data) {
-      setList((prev) =>
-        prev.map((i) =>
-          i.id === inquiryId
-            ? {
-                ...i,
-                response: text,
-                status: isAdmin ? 'responded' : i.status, // agents may remain 'pending' until approval
-                approvalStatus: isAdmin ? 'approved' : 'pending',
-              }
-            : i
-        )
-      );
+      // Refresh inquiries from the server
+      await fetchInquiries();
+    } catch (error) {
+      console.error('Failed to respond to inquiry:', error);
+      setErr('Failed to send response. Please try again.');
     }
   };
 
   const closeInquiry = async (inquiryId: string) => {
     try {
-      const { data } = await http.put(`/api/inquiries/${inquiryId}`, { status: 'closed' });
-      const updated = mapInquiry(data?.inquiry ?? data ?? { _id: inquiryId, status: 'closed' });
-      setList((prev) => prev.map((i) => (i.id === inquiryId ? updated : i)));
-    } catch {
-      alert('Failed to close inquiry');
+      await http.put(`/api/inquiries/${inquiryId}`, { status: 'closed' });
+      // Refresh inquiries from the server
+      await fetchInquiries();
+    } catch (error) {
+      console.error('Failed to close inquiry:', error);
+      setErr('Failed to close inquiry. Please try again.');
     }
   };
 
@@ -353,10 +335,17 @@ const Inquiries: React.FC = () => {
 
                   <p className="text-sm sm:text-base text-gray-600 mb-4 line-clamp-2 sm:line-clamp-3">{inquiry.message}</p>
 
-                  {inquiry.response && (
+                  {inquiry.responses && inquiry.responses.length > 0 && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                      <h4 className="text-sm font-medium text-blue-900 mb-1">Response:</h4>
-                      <p className="text-sm text-blue-800">{inquiry.response}</p>
+                      <h4 className="text-sm font-medium text-blue-900 mb-1">Responses:</h4>
+                      {inquiry.responses.map((response, index) => (
+                        <div key={index} className="mb-2 last:mb-0">
+                          <p className="text-sm text-blue-800">{response.message}</p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            {new Date(response.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   )}
 
@@ -370,8 +359,11 @@ const Inquiries: React.FC = () => {
                 </div>
 
                 <div className="flex flex-col space-y-2 xl:ml-6">
-                  <button className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors">
-                    View Details
+                  <button 
+                    onClick={() => toggleDetails(inquiry.id)}
+                    className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                  >
+                    {expandedInquiry === inquiry.id ? 'Hide Details' : 'View Details'}
                   </button>
 
                   {canEditInquiry(inquiry) && inquiry.status === 'pending' && (
@@ -393,6 +385,53 @@ const Inquiries: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Expanded Details */}
+              {expandedInquiry === inquiry.id && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3">Inquiry Details</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Customer Information</h5>
+                      <div className="space-y-1 text-sm text-gray-600">
+                        <p><strong>Name:</strong> {inquiry.name}</p>
+                        <p><strong>Email:</strong> {inquiry.email}</p>
+                        <p><strong>Phone:</strong> {inquiry.phone || 'Not provided'}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Inquiry Information</h5>
+                      <div className="space-y-1 text-sm text-gray-600">
+                        <p><strong>Subject:</strong> {inquiry.subject}</p>
+                        <p><strong>Priority:</strong> {inquiry.priority}</p>
+                        <p><strong>Status:</strong> {inquiry.status}</p>
+                        <p><strong>Created:</strong> {formatDate(inquiry.createdAt)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Message</h5>
+                    <div className="bg-white p-3 rounded border text-sm text-gray-700 whitespace-pre-wrap">
+                      {inquiry.message}
+                    </div>
+                  </div>
+                  {inquiry.responses && inquiry.responses.length > 0 && (
+                    <div className="mt-4">
+                      <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Responses</h5>
+                      <div className="space-y-2">
+                        {inquiry.responses.map((response, index) => (
+                          <div key={index} className="bg-white p-3 rounded border">
+                            <div className="text-sm text-gray-700 whitespace-pre-wrap">{response.message}</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {new Date(response.createdAt).toLocaleString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Response Form */}
               {respondingTo === inquiry.id && (

@@ -67,7 +67,7 @@ function mapBooking(b: any): UiBooking {
   const pkg = b?.package ?? b?.pricing?.packageName ?? '—';
 
   const amount =
-    toNumberMaybe(b?.amount) || toNumberMaybe(b?.pricing?.totalAmount) || 0;
+    toNumberMaybe(b?.amount) || toNumberMaybe(b?.pricing?.totalAmount) || toNumberMaybe(b?.totalAmount) || 0;
 
   const dep = b?.flight?.departureDate ?? b?.departureDate ?? '';
   const ret = b?.flight?.returnDate ?? b?.returnDate ?? '';
@@ -91,7 +91,19 @@ function mapBooking(b: any): UiBooking {
     agentId,
     agentName,
     approvalStatus,
-  };
+    // Include detailed information for enhanced display
+    flight: b?.flight,
+    hotel: b?.hotel,
+    visa: b?.visa,
+    transport: b?.transport,
+    payment: b?.payment,
+    passengers: b?.passengers,
+    adults: b?.adults,
+    children: b?.children,
+    paymentMethod: b?.paymentMethod,
+    packagePrice: b?.packagePrice,
+    additionalServices: b?.additionalServices,
+  } as any;
 }
 
 const Bookings: React.FC = () => {
@@ -104,6 +116,7 @@ const Bookings: React.FC = () => {
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [editingBooking, setEditingBooking] = useState<UiBooking | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [groupByCustomer, setGroupByCustomer] = useState(false);
 
   const isAdmin = user?.role === 'admin';
 
@@ -133,8 +146,9 @@ const Bookings: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
-  // Accept the created object from BookingModal and prepend to list
-  const handleCreateBooking = (created: any) => {
+  // Accept the created object from BookingModal and refresh data
+  const handleCreateBooking = async (created: any) => {
+    // Just add to local state for immediate feedback
     const ui = mapBooking(created);
     setBookings((prev) => [ui, ...prev]);
   };
@@ -225,6 +239,22 @@ const Bookings: React.FC = () => {
     const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  // Group bookings by customer email for better organization
+  const groupedBookings = useMemo(() => {
+    if (!groupByCustomer) return { 'All Bookings': filteredBookings };
+    
+    const groups: { [key: string]: UiBooking[] } = {};
+    filteredBookings.forEach(booking => {
+      const customerKey = `${booking.customer} (${booking.email})`;
+      if (!groups[customerKey]) {
+        groups[customerKey] = [];
+      }
+      groups[customerKey].push(booking);
+    });
+    
+    return groups;
+  }, [filteredBookings, groupByCustomer]);
 
   const totalRevenue = filteredBookings.reduce((sum, b) => sum + (toNumberMaybe(b.amount) || 0), 0);
   const totalConfirmed = filteredBookings.filter((b) => b.status === 'confirmed').length;
@@ -340,12 +370,33 @@ const Bookings: React.FC = () => {
             <option value="pending">Pending</option>
             <option value="cancelled">Cancelled</option>
           </select>
+          <button
+            onClick={() => setGroupByCustomer(!groupByCustomer)}
+            className={`px-4 py-2 rounded-lg border transition-colors ${
+              groupByCustomer 
+                ? 'bg-blue-600 text-white border-blue-600' 
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {groupByCustomer ? 'Ungroup' : 'Group by Customer'}
+          </button>
         </div>
       </div>
 
-      {/* Bookings Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
-        {filteredBookings.map((booking) => (
+      {/* Bookings Display */}
+      <div className="space-y-6">
+        {Object.entries(groupedBookings).map(([groupName, groupBookings]) => (
+          <div key={groupName}>
+            {groupByCustomer && (
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  {groupName} ({groupBookings.length} booking{groupBookings.length !== 1 ? 's' : ''})
+                </h3>
+                <div className="h-px bg-gray-200"></div>
+              </div>
+            )}
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+              {groupBookings.map((booking) => (
           <div key={booking.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6 hover:shadow-md transition-shadow">
             {/* Booking Header */}
             <div className="flex items-start justify-between mb-4">
@@ -381,6 +432,59 @@ const Bookings: React.FC = () => {
                 <span className="truncate">{booking.package}</span>
               </div>
             </div>
+
+            {/* Detailed Information (if available) */}
+            {(booking as any).flight?.departureCity || (booking as any).hotel?.hotelName || (booking as any).visa?.visaType ? (
+              <div className="space-y-3 mb-4">
+                {/* Flight Info */}
+                {(booking as any).flight?.departureCity && (
+                  <div className="bg-blue-50 rounded-lg p-3">
+                    <h4 className="text-xs font-semibold text-blue-900 mb-2">Flight Details</h4>
+                    <div className="text-xs text-blue-800">
+                      <p><span className="font-medium">Route:</span> {(booking as any).flight.departureCity} → {(booking as any).flight.arrivalCity}</p>
+                      <p><span className="font-medium">Class:</span> {(booking as any).flight.flightClass?.charAt(0).toUpperCase() + (booking as any).flight.flightClass?.slice(1)}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Hotel Info */}
+                {(booking as any).hotel?.hotelName && (
+                  <div className="bg-green-50 rounded-lg p-3">
+                    <h4 className="text-xs font-semibold text-green-900 mb-2">Hotel Details</h4>
+                    <div className="text-xs text-green-800">
+                      <p><span className="font-medium">Hotel:</span> {(booking as any).hotel.hotelName}</p>
+                      <p><span className="font-medium">Room:</span> {(booking as any).hotel.roomType}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Visa Info */}
+                {(booking as any).visa?.visaType && (
+                  <div className="bg-purple-50 rounded-lg p-3">
+                    <h4 className="text-xs font-semibold text-purple-900 mb-2">Visa Details</h4>
+                    <div className="text-xs text-purple-800">
+                      <p><span className="font-medium">Type:</span> {(booking as any).visa.visaType?.charAt(0).toUpperCase() + (booking as any).visa.visaType?.slice(1)}</p>
+                      {(booking as any).visa.nationality && (
+                        <p><span className="font-medium">Nationality:</span> {(booking as any).visa.nationality}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Transport Info */}
+                {(booking as any).transport?.transportType && (
+                  <div className="bg-orange-50 rounded-lg p-3">
+                    <h4 className="text-xs font-semibold text-orange-900 mb-2">Transport Details</h4>
+                    <div className="text-xs text-orange-800">
+                      <p><span className="font-medium">Type:</span> {(booking as any).transport.transportType?.charAt(0).toUpperCase() + (booking as any).transport.transportType?.slice(1)}</p>
+                      {(booking as any).transport.pickupLocation && (
+                        <p><span className="font-medium">Pickup:</span> {(booking as any).transport.pickupLocation}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
 
             {/* Travel Dates */}
             <div className="bg-gray-50 rounded-lg p-3 mb-4">
@@ -434,10 +538,13 @@ const Bookings: React.FC = () => {
             )}
           </div>
         ))}
+            </div>
+          </div>
+        ))}
 
         {/* Empty State */}
         {!loading && !err && filteredBookings.length === 0 && (
-          <div className="col-span-full text-center py-12">
+          <div className="text-center py-12">
             <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No bookings found</h3>
             <p className="text-gray-500 mb-4">
@@ -460,7 +567,11 @@ const Bookings: React.FC = () => {
       {/* Booking Modal */}
       <BookingModal
         isOpen={isBookingModalOpen}
-        onClose={() => setIsBookingModalOpen(false)}
+        onClose={() => {
+          setIsBookingModalOpen(false);
+          // Refresh data when modal closes to ensure we have all bookings
+          fetchBookings();
+        }}
         onSubmit={handleCreateBooking}
       />
 

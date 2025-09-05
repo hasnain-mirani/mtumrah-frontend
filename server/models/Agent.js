@@ -9,6 +9,20 @@ const agentSchema = mongoose.Schema(
     role: { type: String, default: "agent" },
     phone: { type: String },
     isActive: { type: Boolean, default: true },
+    
+    // Performance tracking fields
+    monthlyTarget: { type: Number, default: 5000 },
+    commissionRate: { type: Number, default: 5.0, min: 0, max: 100 },
+    
+    // Performance statistics (calculated from bookings)
+    totalBookings: { type: Number, default: 0 },
+    totalRevenue: { type: Number, default: 0 },
+    monthlyBookings: { type: Number, default: 0 },
+    monthlyRevenue: { type: Number, default: 0 },
+    
+    // Additional fields
+    department: { type: String, enum: ['sales', 'customer_service', 'operations', 'marketing'], default: 'sales' },
+    lastActivity: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );

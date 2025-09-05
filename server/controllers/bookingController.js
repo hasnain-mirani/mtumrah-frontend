@@ -1,18 +1,91 @@
 import Booking from "../models/Booking.js";
+import { sendBookingConfirmationEmail } from "../utils/emailService.js";
 
 // @desc    Create new booking
 // @route   POST /api/bookings
 // @access  Private (logged-in user)
 export const createBooking = async (req, res) => {
   try {
-    const booking = await Booking.create({
+    const bookingData = {
+      // Customer Information
       customerName: req.body.customerName,
       customerEmail: req.body.customerEmail,
+      contactNumber: req.body.contactNumber,
+      passengers: req.body.passengers,
+      adults: req.body.adults,
+      children: req.body.children,
+      
+      // Package Information
       package: req.body.package,
+      packagePrice: req.body.packagePrice,
+      additionalServices: req.body.additionalServices,
+      totalAmount: req.body.totalAmount,
+      paymentMethod: req.body.paymentMethod || 'credit_card',
+      
+      // Travel Dates
       date: req.body.date,
-      agent: req.user._id, // from protect middleware
-    });
-    res.status(201).json(booking);
+      departureDate: req.body.departureDate,
+      returnDate: req.body.returnDate,
+      
+      // Flight Information
+      flight: {
+        departureCity: req.body.departureCity,
+        arrivalCity: req.body.arrivalCity,
+        flightClass: req.body.flightClass || 'economy'
+      },
+      
+      // Hotel Information
+      hotel: {
+        hotelName: req.body.hotelName,
+        roomType: req.body.roomType,
+        checkIn: req.body.checkIn,
+        checkOut: req.body.checkOut
+      },
+      
+      // Visa Information
+      visa: {
+        visaType: req.body.visaType || 'umrah',
+        passportNumber: req.body.passportNumber,
+        nationality: req.body.nationality
+      },
+      
+      // Transport Information
+      transport: {
+        transportType: req.body.transportType || 'bus',
+        pickupLocation: req.body.pickupLocation
+      },
+      
+      // Payment Information
+      payment: {
+        cardNumber: req.body.cardNumber,
+        expiryDate: req.body.expiryDate,
+        cvv: req.body.cvv,
+        cardholderName: req.body.cardholderName
+      },
+      
+      // Agent and Grouping
+      agent: req.user._id,
+      customerGroup: req.body.customerEmail, // Use email for grouping
+    };
+
+              const booking = await Booking.create(bookingData);
+          
+          // Send confirmation email to customer
+          try {
+            await sendBookingConfirmationEmail({
+              customerName: booking.customerName,
+              customerEmail: booking.customerEmail,
+              package: booking.package,
+              totalAmount: booking.totalAmount,
+              departureDate: booking.departureDate,
+              status: booking.status
+            });
+          } catch (emailError) {
+            console.error('Failed to send booking confirmation email:', emailError);
+            // Don't fail the booking creation if email fails
+          }
+          
+          res.status(201).json(booking);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -92,6 +165,44 @@ export const deleteBooking = async (req, res) => {
 
   await booking.deleteOne();
   res.json({ message: "Booking removed" });
+};
+
+// @desc    Approve booking
+// @route   PUT /api/bookings/:id/approve
+// @access  Private (Admin only)
+export const approveBooking = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    booking.approvalStatus = "approved";
+    booking.status = "confirmed";
+    const updatedBooking = await booking.save();
+    
+    res.json({ success: true, data: updatedBooking });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Reject booking
+// @route   PUT /api/bookings/:id/reject
+// @access  Private (Admin only)
+export const rejectBooking = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    booking.approvalStatus = "rejected";
+    booking.status = "cancelled";
+    const updatedBooking = await booking.save();
+    
+    res.json({ success: true, data: updatedBooking });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // @desc    Get logged-in user bookings

@@ -6,23 +6,30 @@ import {
   getAgentById,
   updateAgent,
   deleteAgent,
+  updateAgentPerformance,
+  getAgentPerformance,
+  getAgentsWithPerformance,
 } from "../controllers/agentController.js";
 import { protect, admin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// ✅ Specific first
+// ✅ Specific routes first (before dynamic ones)
 router.post("/register", protect, admin, registerAgent);
 router.post("/login", loginAgent);
 
-// Then dynamic ones
-router.route("/:id")
-  .get(protect, getAgentById)
-  .put(protect, updateAgent)
-  .delete(protect, admin, deleteAgent);
+// Performance routes (must be before /:id routes)
+router.get("/performance", protect, admin, getAgentsWithPerformance);
+router.get("/:id/performance", protect, getAgentPerformance);
+router.put("/:id/performance", protect, updateAgentPerformance);
 
 // List all agents (admin only)
 router.get("/", protect, admin, getAgents);
 
+// Dynamic routes last
+router.route("/:id")
+  .get(protect, getAgentById)
+  .put(protect, updateAgent)
+  .delete(protect, admin, deleteAgent);
 
 export default router;

@@ -1,6 +1,9 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+
+// Load environment variables
+dotenv.config();
 import morgan from "morgan";
 import colors from "colors";
 import connectDB from "./config/db.js";
@@ -27,12 +30,17 @@ const app = express();
 // Security & Rate Limiting
 app.use(helmet());
 
-// Limit requests to avoid abuse
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 200, 
-});
-app.use(limiter);
+// Limit requests to avoid abuse (disabled for development)
+if (process.env.NODE_ENV === 'production') {
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // 100 requests in production
+    message: 'Too many requests, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.use(limiter);
+}
 
 //  Middleware
 app.use(express.json());
@@ -107,7 +115,7 @@ app.use(notFound);
 app.use(errorHandler);
 
 // ===== Start Server =====
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
   console.log(
     `Server running in ${process.env.NODE_ENV} mode on port ${PORT}`.bgMagenta

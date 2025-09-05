@@ -1,5 +1,6 @@
 // src/components/SaleAgents.tsx
 import React, { useEffect, useMemo, useState } from 'react';
+import { useData } from '../context/DataContext';
 import AgentModal from './AgentModal';
 import {
   Search,
@@ -36,7 +37,6 @@ function mapAgent(a: any): UiAgent {
     a?.name ||
     [a?.firstName, a?.lastName].filter(Boolean).join(' ') ||
     'Unnamed Agent';
-  const stats = a?.stats || {};
 
   return {
     id: id || crypto.randomUUID(),
@@ -44,16 +44,15 @@ function mapAgent(a: any): UiAgent {
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     avatar: a?.avatar ?? null,
-    totalBookings:
-      Number(a?.totalBookings ?? stats?.totalBookings ?? 0) || 0,
-    totalRevenue:
-      Number(a?.totalRevenue ?? stats?.totalRevenue ?? 0) || 0,
+    // Use real performance data from backend
+    totalBookings: Number(a?.totalBookings ?? 0) || 0,
+    totalRevenue: Number(a?.totalRevenue ?? 0) || 0,
     monthlyTarget: Number(a?.monthlyTarget ?? 5000) || 5000,
     joinDate: a?.joinDate || a?.createdAt || '',
-    status: a?.status || 'active',
+    status: a?.isActive ? 'active' : 'inactive',
     recentBookings: Array.isArray(a?.recentBookings)
       ? a.recentBookings.map((b: any) => ({
-          id: b?._id || b?.id || '',
+          id: b?.id || b?._id || '',
           customer: b?.customer || b?.customerName || '—',
           amount: Number(b?.amount) || 0,
         }))
@@ -65,32 +64,18 @@ const SaleAgents: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<UiAgent | null>(null);
-  const [agents, setAgents] = useState<UiAgent[]>([]);
-
+  
+  // Use DataContext instead of local state
+  const { agents: contextAgents, fetchAgents, addAgent, updateAgent, deleteAgent: deleteAgentFromContext } = useData();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
-  // ---- Fetch agents from backend ----
-  const fetchAgents = async () => {
-    setLoading(true);
-    setErr('');
-    try {
-      // If your route is /api/agents, change here:
-      const { data } = await http.get('/api/agent');
-      const list = Array.isArray(data) ? data : data?.agents || [];
-      setAgents(list.map(mapAgent));
-    } catch (e: any) {
-      const msg =
-        e?.response?.data?.message ||
-        (typeof e?.response?.data === 'string' ? e.response.data : '') ||
-        e?.message ||
-        'Failed to load agents';
-      setErr(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Map context agents to UI format
+  const agents = useMemo(() => {
+    return contextAgents.map(mapAgent);
+  }, [contextAgents]);
 
+  // Force refresh agents on mount
   useEffect(() => {
     fetchAgents();
   }, []);
@@ -107,14 +92,19 @@ const SaleAgents: React.FC = () => {
       password: agentData.password, // Required for agent creation
       phone: agentData.phone,
       monthlyTarget: Number(agentData.monthlyTarget) || 5000,
-      status: 'active',
+      commissionRate: Number(agentData.commissionRate) || 5.0,
+      department: agentData.department || 'sales',
+      isActive: true,
     };
 
     try {
       // Use the correct register endpoint
       const { data } = await http.post('/api/agent/register', payload);
       const created = mapAgent(data?.agent ?? data);
-      setAgents((prev) => [created, ...prev]);
+      
+      // Refresh agents from API to get updated data
+      await fetchAgents();
+      
       setIsAgentModalOpen(false);
     } catch (e: any) {
       alert(
@@ -129,9 +119,9 @@ const SaleAgents: React.FC = () => {
   const deleteAgent = async (id: string) => {
     if (!confirm('Delete this agent?')) return;
     try {
-      // If your route is /api/agents/:id, change here:
       await http.delete(`/api/agent/${id}`);
-      setAgents((prev) => prev.filter((a) => a.id !== id));
+      // Refresh agents from API to get updated data
+      await fetchAgents();
     } catch (e: any) {
       alert(
         e?.response?.data?.message ||
@@ -150,6 +140,8 @@ const SaleAgents: React.FC = () => {
       email: agentData.email,
       phone: agentData.phone,
       monthlyTarget: Number(agentData.monthlyTarget) || 5000,
+      commissionRate: Number(agentData.commissionRate) || 5.0,
+      department: agentData.department || 'sales',
     };
 
     // Only include password if it was changed
@@ -159,8 +151,10 @@ const SaleAgents: React.FC = () => {
 
     try {
       const { data } = await http.put(`/api/agent/${editingAgent.id}`, payload);
-      const updated = mapAgent(data?.agent ?? data);
-      setAgents(prev => prev.map(a => a.id === editingAgent.id ? updated : a));
+      
+      // Refresh agents from API to get updated data
+      await fetchAgents();
+      
       setIsAgentModalOpen(false);
       setEditingAgent(null);
     } catch (e: any) {

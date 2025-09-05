@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
 import { Booking, Inquiry, Agent, Analytics } from '../types';
+import { http } from '../lib/http';
 
 interface DataContextType {
   bookings: Booking[];
@@ -14,6 +15,9 @@ interface DataContextType {
   addAgent: (agent: Omit<Agent, 'id' | 'totalBookings' | 'totalRevenue' | 'recentBookings'>) => void;
   updateAgent: (id: string, updates: Partial<Agent>) => void;
   deleteAgent: (id: string) => void;
+  fetchAgents: () => Promise<void>;
+  fetchBookings: () => Promise<void>;
+  fetchInquiries: () => Promise<void>;
   approveChange: (type: 'booking' | 'inquiry', id: string) => void;
   rejectChange: (type: 'booking' | 'inquiry', id: string) => void;
 }
@@ -21,108 +25,97 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [bookings, setBookings] = useState<Booking[]>([
-    {
-      id: 'BK001',
-      customer: 'Mohammed Ali',
-      email: 'mohammed@example.com',
-      phone: '+966 50 123 4567',
-      package: 'Premium Umrah Package',
-      departureDate: '2024-03-15',
-      returnDate: '2024-03-22',
-      status: 'confirmed',
-      amount: '$3,500',
-      agentId: 'AG001',
-      agentName: 'Ali Rahman',
-      createdAt: '2024-02-10',
-    },
-    {
-      id: 'BK002',
-      customer: 'Fatima Ahmed',
-      email: 'fatima@example.com',
-      phone: '+966 55 987 6543',
-      package: 'Standard Umrah Package',
-      departureDate: '2024-04-01',
-      returnDate: '2024-04-08',
-      status: 'pending',
-      amount: '$2,800',
-      agentId: 'AG002',
-      agentName: 'Sara Khan',
-      createdAt: '2024-02-12',
-    }
-  ]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
 
-  const [inquiries, setInquiries] = useState<Inquiry[]>([
-    {
-      id: 'INQ001',
-      name: 'Sarah Johnson',
-      email: 'sarah@example.com',
-      phone: '+966 50 111 2222',
-      subject: 'Premium Umrah Package Inquiry',
-      message: 'I am interested in your premium Umrah package for a family of 4.',
-      status: 'pending',
-      priority: 'high',
-      agentId: 'AG001',
-      agentName: 'Ali Rahman',
-      createdAt: '2024-02-15T10:30:00Z',
-      updatedAt: '2024-02-15T10:30:00Z',
-    },
-    {
-      id: 'INQ002',
-      name: 'Omar Hassan',
-      email: 'omar@example.com',
-      phone: '+966 55 333 4444',
-      subject: 'Travel Dates Inquiry',
-      message: 'What are the available travel dates for March 2024?',
-      status: 'responded',
-      priority: 'medium',
-      agentId: 'AG002',
-      agentName: 'Sara Khan',
-      createdAt: '2024-02-14T14:20:00Z',
-      updatedAt: '2024-02-14T16:45:00Z',
-      response: 'We have availability from March 10-25. Please let me know your preferred dates.'
-    }
-  ]);
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
 
-  const [agents, setAgents] = useState<Agent[]>([
-    {
-      id: 'AG001',
-      name: 'Ali Rahman',
-      email: 'ali@example.com',
-      phone: '+966 50 123 4567',
-      totalBookings: 15,
-      totalRevenue: 45000,
-      monthlyTarget: 50000,
-      joinDate: '2023-06-15',
-      status: 'active',
-      recentBookings: [
-        { id: 'BK001', customer: 'Mohammed Ali', amount: 3500 }
-      ]
-    },
-    {
-      id: 'AG002',
-      name: 'Sara Khan',
-      email: 'sara@example.com',
-      phone: '+966 55 987 6543',
-      totalBookings: 12,
-      totalRevenue: 38000,
-      monthlyTarget: 40000,
-      joinDate: '2023-08-20',
-      status: 'active',
-      recentBookings: [
-        { id: 'BK002', customer: 'Fatima Ahmed', amount: 2800 }
-      ]
+  const [agents, setAgents] = useState<Agent[]>([]);
+
+  // Fetch agents from API
+  const fetchAgents = React.useCallback(async () => {
+    try {
+      const { data } = await http.get('/api/agent/performance');
+      const agentsList = Array.isArray(data) ? data : data?.data || data?.agents || [];
+      setAgents(agentsList);
+    } catch (error) {
+      console.error('Failed to fetch agents:', error);
+      setAgents([]);
     }
-  ]);
+  }, []);
+
+  // Fetch bookings from API
+  const fetchBookings = React.useCallback(async () => {
+    try {
+      const { data } = await http.get('/api/bookings');
+      const bookingsList = Array.isArray(data) ? data : data?.data || data?.bookings || [];
+      // Map _id to id for consistency
+      const mappedBookings = bookingsList.map(booking => ({
+        ...booking,
+        id: booking._id || booking.id
+      }));
+      setBookings(mappedBookings);
+    } catch (error) {
+      console.error('Failed to fetch bookings:', error);
+      setBookings([]);
+    }
+  }, []);
+
+  // Fetch inquiries from API
+  const fetchInquiries = React.useCallback(async () => {
+    try {
+      const { data } = await http.get('/api/inquiries');
+      const inquiriesList = Array.isArray(data) ? data : data?.data || data?.inquiries || [];
+      // Map _id to id for consistency
+      const mappedInquiries = inquiriesList.map(inquiry => ({
+        ...inquiry,
+        id: inquiry._id || inquiry.id
+      }));
+      setInquiries(mappedInquiries);
+    } catch (error) {
+      console.error('Failed to fetch inquiries:', error);
+      setInquiries([]);
+    }
+  }, []);
+
+  // Load all data on mount (only if user is authenticated)
+  React.useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetchAgents();
+      fetchBookings();
+      fetchInquiries();
+    }
+  }, []); // Empty dependency array to run only once
+
+  // Listen for authentication changes
+  React.useEffect(() => {
+    const handleStorageChange = () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        fetchAgents();
+        fetchBookings();
+        fetchInquiries();
+      } else {
+        setAgents([]);
+        setBookings([]);
+        setInquiries([]);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const analytics: Analytics = {
     totalBookings: bookings.length,
     monthlyBookings: bookings.filter(b =>
-      new Date(b.createdAt).getMonth() === new Date().getMonth()
+      b.createdAt && new Date(b.createdAt).getMonth() === new Date().getMonth()
     ).length,
-    totalRevenue: bookings.reduce((sum, b) =>
-      sum + parseInt(b.amount.replace(/[$,]/g, '')), 0
-    ),
+    totalRevenue: bookings.reduce((sum, b) => {
+      if (!b.amount || typeof b.amount !== 'string') return sum;
+      const amount = parseFloat(b.amount.replace(/[$,]/g, '')) || 0;
+      return sum + amount;
+    }, 0),
     activeInquiries: inquiries.filter(i => i.status === 'pending').length,
     resolvedInquiries: inquiries.filter(i => i.status !== 'pending').length,
     agentPerformance: agents.map(agent => ({
@@ -131,7 +124,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       bookings: bookings.filter(b => b.agentId === agent.id).length,
       revenue: bookings
         .filter(b => b.agentId === agent.id)
-        .reduce((sum, b) => sum + parseInt(b.amount.replace(/[$,]/g, '')), 0),
+        .reduce((sum, b) => {
+          if (!b.amount || typeof b.amount !== 'string') return sum;
+          const amount = parseFloat(b.amount.replace(/[$,]/g, '')) || 0;
+          return sum + amount;
+        }, 0),
       inquiries: inquiries.filter(i => i.agentId === agent.id).length
     })),
     monthlyTrends: [
@@ -221,60 +218,55 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAgents(prev => prev.filter(agent => agent.id !== id));
   };
 
-  const approveChange = (type: 'booking' | 'inquiry', id: string) => {
+  const approveChange = async (type: 'booking' | 'inquiry', id: string) => {
+    try {
     if (type === 'booking') {
-      setBookings(prev => prev.map(booking => {
-        if (booking.id === id && booking.pendingChanges) {
-          return {
-            ...booking,
-            ...booking.pendingChanges,
-            status: booking.pendingChanges.status || 'confirmed',
-            pendingChanges: undefined,
-            approvalStatus: undefined
-          };
+        const { data } = await http.put(`/api/bookings/${id}/approve`);
+        if (data.success) {
+          setBookings(prev => prev.map(booking => 
+            booking.id === id 
+              ? { ...booking, approvalStatus: 'approved', status: 'confirmed' }
+              : booking
+          ));
         }
-        return booking;
-      }));
     } else {
-      setInquiries(prev => prev.map(inquiry => {
-        if (inquiry.id === id && inquiry.pendingChanges) {
-          return {
-            ...inquiry,
-            ...inquiry.pendingChanges,
-            status: inquiry.pendingChanges.status || 'responded',
-            pendingChanges: undefined,
-            approvalStatus: undefined,
-            updatedAt: new Date().toISOString()
-          };
+        const { data } = await http.put(`/api/inquiries/${id}/approve`);
+        if (data.success) {
+          setInquiries(prev => prev.map(inquiry => 
+            inquiry.id === id 
+              ? { ...inquiry, approvalStatus: 'approved', status: 'responded' }
+              : inquiry
+          ));
         }
-        return inquiry;
-      }));
+      }
+    } catch (error) {
+      console.error('Failed to approve:', error);
     }
   };
 
-  const rejectChange = (type: 'booking' | 'inquiry', id: string) => {
+  const rejectChange = async (type: 'booking' | 'inquiry', id: string) => {
+    try {
     if (type === 'booking') {
-      setBookings(prev => prev.map(booking => {
-        if (booking.id === id) {
-          return {
-            ...booking,
-            pendingChanges: undefined,
-            approvalStatus: undefined
-          };
+        const { data } = await http.put(`/api/bookings/${id}/reject`);
+        if (data.success) {
+          setBookings(prev => prev.map(booking => 
+            booking.id === id 
+              ? { ...booking, approvalStatus: 'rejected', status: 'cancelled' }
+              : booking
+          ));
         }
-        return booking;
-      }));
     } else {
-      setInquiries(prev => prev.map(inquiry => {
-        if (inquiry.id === id) {
-          return {
-            ...inquiry,
-            pendingChanges: undefined,
-            approvalStatus: undefined
-          };
+        const { data } = await http.put(`/api/inquiries/${id}/reject`);
+        if (data.success) {
+          setInquiries(prev => prev.map(inquiry => 
+            inquiry.id === id 
+              ? { ...inquiry, approvalStatus: 'rejected', status: 'closed' }
+              : inquiry
+          ));
         }
-        return inquiry;
-      }));
+      }
+    } catch (error) {
+      console.error('Failed to reject:', error);
     }
   };
 
@@ -291,9 +283,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     addAgent,
     updateAgent,
     deleteAgent,
+    fetchAgents,
+    fetchBookings,
+    fetchInquiries,
     approveChange,
     rejectChange
   };
+
 
   return (
     <DataContext.Provider value={value}>

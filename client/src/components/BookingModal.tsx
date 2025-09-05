@@ -127,61 +127,54 @@ export function buildBookingPayload(formData: BookingFormData, user: any) {
   }
 
   return {
-    // ---- REQUIRED FIELDS (names the backend expects)
+    // ---- CUSTOMER INFORMATION
     customerName,
     customerEmail,
+    contactNumber: formData.contactNumber || '',
+    passengers: formData.passengers || '',
+    adults: formData.adults || '',
+    children: formData.children || '',
+    
+    // ---- PACKAGE INFORMATION
     package: pkg,
+    packagePrice: formData.packagePrice || '',
+    additionalServices: formData.additionalServices || '',
+    totalAmount: formData.totalAmount || '',
+    paymentMethod: formData.paymentMethod || 'credit_card',
+    
+    // ---- TRAVEL DATES
     date: bookingDateIso,
-
-    // ---- Additional fields your backend likely accepts
-    contactNumber: formData.contactNumber,
-    passengers: toNumber(formData.passengers),
-    adults: toNumber(formData.adults),
-    children: toNumber(formData.children),
-    agentId,
-
-    flight: {
-      departureCity: formData.departureCity || null,
-      arrivalCity:   formData.arrivalCity || null,
-      departureDate: isoOrNull(formData.departureDate),
-      returnDate:    isoOrNull(formData.returnDate),
-      class:         formData.flightClass || 'economy',
-    },
-
-    hotel: {
-      name:     formData.hotelName || null,
-      roomType: formData.roomType || null,
-      checkIn:  isoOrNull(formData.checkIn),
-      checkOut: isoOrNull(formData.checkOut),
-    },
-
-    visa: {
-      type:           formData.visaType || 'umrah',
-      passportNumber: formData.passportNumber || null,
-      nationality:    formData.nationality || null,
-    },
-
-    transport: {
-      type:           formData.transportType || 'bus',
-      pickupLocation: formData.pickupLocation || null,
-    },
-
-    pricing: {
-      packagePrice:       toNumber(formData.packagePrice),
-      totalAmount:        toNumber(formData.totalAmount),
-      additionalServices: formData.additionalServices || '',
-      currency:           'USD',
-    },
-
-    payment: {
-      method:   formData.paymentMethod,
-      cardLast4: formData.cardNumber ? formData.cardNumber.replace(/\s+/g, '').slice(-4) : undefined,
-    },
-
-    // Often convenient for backend:
-    amount: toNumber(formData.totalAmount),
-    status: 'pending',
-    approvalStatus: 'pending',
+    departureDate: isoOrNull(formData.departureDate) || '',
+    returnDate: isoOrNull(formData.returnDate) || '',
+    
+    // ---- FLIGHT INFORMATION
+    departureCity: formData.departureCity || '',
+    arrivalCity: formData.arrivalCity || '',
+    flightClass: formData.flightClass || 'economy',
+    
+    // ---- HOTEL INFORMATION
+    hotelName: formData.hotelName || '',
+    roomType: formData.roomType || '',
+    checkIn: isoOrNull(formData.checkIn) || '',
+    checkOut: isoOrNull(formData.checkOut) || '',
+    
+    // ---- VISA INFORMATION
+    visaType: formData.visaType || 'umrah',
+    passportNumber: formData.passportNumber || '',
+    nationality: formData.nationality || '',
+    
+    // ---- TRANSPORT INFORMATION
+    transportType: formData.transportType || 'bus',
+    pickupLocation: formData.pickupLocation || '',
+    
+    // ---- PAYMENT INFORMATION
+    cardNumber: formData.cardNumber || '',
+    expiryDate: formData.expiryDate || '',
+    cvv: formData.cvv || '',
+    cardholderName: formData.cardholderName || '',
+    
+    // ---- CUSTOMER GROUPING
+    customerGroup: customerEmail, // Use email for grouping same customer bookings
   };
 }
 
@@ -308,7 +301,9 @@ const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, onSubmit }
     setBookings(prev => [...prev, newBooking]);
     setCurrentBookingIndex(bookings.length);
     setFormData(newBooking);
-    setCurrentStep(3); // Go to flights step
+    setCurrentStep(0); // Go to first step (Customer Info)
+    setErrors({}); // Clear any validation errors
+    setServerError(''); // Clear server errors
   };
 
   const switchToBooking = (index: number) => {

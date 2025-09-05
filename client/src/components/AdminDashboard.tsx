@@ -1,24 +1,27 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import StatCard from './StatCard';
 import PieChart from './PieChart';
 import { 
   Calendar, 
-  Users, 
   MessageSquare, 
   TrendingUp, 
   CheckCircle, 
   Clock, 
   XCircle,
-  BarChart3,
-  DollarSign,
   AlertTriangle
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
-  const { analytics, bookings, inquiries, agents, approveChange, rejectChange } = useData();
+  const { bookings, inquiries, agents, approveChange, rejectChange, fetchAgents, fetchBookings, fetchInquiries } = useData();
+
+  // Refresh data on mount
+  React.useEffect(() => {
+    fetchBookings();
+    fetchInquiries();
+  }, []);
 
   // Get pending approvals
   const pendingBookings = bookings.filter(b => b.approvalStatus === 'pending');
@@ -28,7 +31,11 @@ const AdminDashboard: React.FC = () => {
   // Calculate real-time metrics
   const totalRevenue = bookings
     .filter(b => b.status === 'confirmed')
-    .reduce((sum, b) => sum + parseInt(b.amount.replace(/[$,]/g, '')), 0);
+    .reduce((sum, b) => {
+      if (!b.amount || typeof b.amount !== 'string') return sum;
+      const amount = parseFloat(b.amount.replace(/[$,]/g, '')) || 0;
+      return sum + amount;
+    }, 0);
 
   const activeInquiries = inquiries.filter(i => i.status === 'pending').length;
   const resolvedInquiries = inquiries.filter(i => i.status === 'responded' || i.status === 'closed').length;
@@ -72,71 +79,33 @@ const AdminDashboard: React.FC = () => {
   ];
 
   // Calculate real-time agent performance
-  const agentPerformanceData = agents.map((agent, index) => {
+  const agentPerformanceData = agents && agents.length > 0 ? agents.map((agent, index) => {
     const agentBookings = bookings.filter(b => b.agentId === agent.id).length;
     const totalBookings = bookings.length || 1; // Prevent division by zero
+    const percentage = totalBookings > 0 ? (agentBookings / totalBookings) * 100 : 0;
+    
     return {
-      name: agent.name,
-      value: (agentBookings / totalBookings) * 100,
+      name: agent.name || `Agent ${index + 1}`,
+      value: isNaN(percentage) ? 0 : percentage,
       color: ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F59E0B'][index % 6]
     };
-  });
+  }) : [];
 
-  // Calculate monthly trends (last 6 months)
-  const monthlyTrends = Array.from({ length: 6 }, (_, i) => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - i);
-    const month = date.toLocaleDateString('en-US', { month: 'short' });
-    const year = date.getFullYear();
-    const monthNum = date.getMonth();
-    
-    const monthBookings = bookings.filter(b => {
-      const bookingDate = new Date(b.createdAt);
-      return bookingDate.getMonth() === monthNum && bookingDate.getFullYear() === year;
-    });
-    
-    const monthRevenue = monthBookings
-      .filter(b => b.status === 'confirmed')
-      .reduce((sum, b) => sum + parseInt(b.amount.replace(/[$,]/g, '')), 0);
-    
-    return {
-      month: `${month} ${year}`,
-      bookings: monthBookings.length,
-      revenue: monthRevenue
-    };
-  }).reverse();
 
-  const pendingApprovals = [
-    ...bookings.filter(b => b.approvalStatus === 'pending').map(b => ({
-      type: 'booking' as const,
-      id: b.id,
-      title: `Booking Update - ${b.customer}`,
-      agent: b.agentName,
-      changes: b.pendingChanges
-    })),
-    ...inquiries.filter(i => i.approvalStatus === 'pending').map(i => ({
-      type: 'inquiry' as const,
-      id: i.id,
-      title: `Inquiry Update - ${i.subject}`,
-      agent: i.agentName,
-      changes: i.pendingChanges
-    }))
-  ];
-
-  const handleApproveBooking = (bookingId: string) => {
-    approveChange('booking', bookingId);
+  const handleApproveBooking = async (bookingId: string) => {
+    await approveChange('booking', bookingId);
   };
 
-  const handleRejectBooking = (bookingId: string) => {
-    rejectChange('booking', bookingId);
+  const handleRejectBooking = async (bookingId: string) => {
+    await rejectChange('booking', bookingId);
   };
 
-  const handleApproveInquiry = (inquiryId: string) => {
-    approveChange('inquiry', inquiryId);
+  const handleApproveInquiry = async (inquiryId: string) => {
+    await approveChange('inquiry', inquiryId);
   };
 
-  const handleRejectInquiry = (inquiryId: string) => {
-    rejectChange('inquiry', inquiryId);
+  const handleRejectInquiry = async (inquiryId: string) => {
+    await rejectChange('inquiry', inquiryId);
   };
 
   return (
@@ -156,96 +125,37 @@ const AdminDashboard: React.FC = () => {
         ))}
       </div>
 
-      {/* Charts and Analytics */}
-      <div className="grid grid-cols-1 gap-6 lg:gap-8">
-        {/* Agent Performance Chart */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+      {/* Agent Performance Chart */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">
             Bookings by Agents
           </h3>
-          <div className="text-sm text-gray-500 mb-6">Current Year</div>
-          {agentPerformanceData.length > 0 ? (
-            <PieChart data={agentPerformanceData} />
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              No booking data available
-            </div>
-          )}
+          <button
+            onClick={() => {
+              console.log('🔄 Manual refresh triggered');
+              fetchAgents();
+            }}
+            className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Refresh
+          </button>
         </div>
-      </div>
-
-      {/* Agent Performance Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Agent Performance</h3>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Agent
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Bookings
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Revenue
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Inquiries
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Performance
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {agents.map((agent) => {
-                const agentBookings = bookings.filter(b => b.agentId === agent.id);
-                const agentRevenue = agentBookings
-                  .filter(b => b.status === 'confirmed')
-                  .reduce((sum, b) => sum + parseInt(b.amount.replace(/[$,]/g, '')), 0);
-                const agentInquiries = inquiries.filter(i => i.agentId === agent.id);
-                const performance = agent.monthlyTarget > 0 ? (agentRevenue / agent.monthlyTarget) * 100 : 0;
-                
-                return (
-                  <tr key={agent.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                          <Users className="h-4 w-4 text-blue-600" />
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{agent.name}</div>
-                          <div className="text-sm text-gray-500">{agent.id}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {agentBookings.length}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ${agentRevenue.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {agentInquiries.length}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                          <div 
-                            className="bg-blue-600 h-2 rounded-full" 
-                            style={{ width: `${Math.min(performance, 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-sm text-gray-600">{performance.toFixed(0)}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <div className="text-sm text-gray-500 mb-6">Current Year</div>
+        {agentPerformanceData.length > 0 ? (
+          <PieChart data={agentPerformanceData} />
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            {agents.length === 0 ? (
+              <div>
+                <p>No agents available</p>
+                <p className="text-sm mt-2">
+                  {!localStorage.getItem('token') ? 'Please log in to view agents' : 'Loading agents...'}
+                </p>
+              </div>
+            ) : 'No booking data available'}
+          </div>
+        )}
       </div>
 
       {/* Pending Approvals */}
@@ -271,12 +181,8 @@ const AdminDashboard: React.FC = () => {
                     <p className="text-sm text-gray-600">Agent: {booking.agentName}</p>
                     <p className="text-sm text-gray-600">Package: {booking.package}</p>
                     <p className="text-sm text-gray-600">Amount: {booking.amount}</p>
-                    {booking.pendingChanges && (
-                      <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-gray-600">
-                        <strong>Requested Changes:</strong>
-                        <pre className="mt-1 whitespace-pre-wrap">{JSON.stringify(booking.pendingChanges, null, 2)}</pre>
-                      </div>
-                    )}
+                    <p className="text-sm text-gray-600">Customer: {booking.customer}</p>
+                    <p className="text-sm text-gray-600">Email: {booking.email}</p>
                   </div>
                   <div className="flex space-x-2 ml-4">
                     <button
@@ -310,15 +216,11 @@ const AdminDashboard: React.FC = () => {
                         Pending
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600">Agent: {inquiry.agentName}</p>
+                    <p className="text-sm text-gray-600">Agent: {inquiry.agentName || 'Unassigned'}</p>
                     <p className="text-sm text-gray-600">Customer: {inquiry.name}</p>
+                    <p className="text-sm text-gray-600">Email: {inquiry.email}</p>
                     <p className="text-sm text-gray-600">Priority: {inquiry.priority}</p>
-                    {inquiry.pendingChanges && (
-                      <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-gray-600">
-                        <strong>Requested Changes:</strong>
-                        <pre className="mt-1 whitespace-pre-wrap">{JSON.stringify(inquiry.pendingChanges, null, 2)}</pre>
-                      </div>
-                    )}
+                    <p className="text-sm text-gray-600">Message: {inquiry.message?.substring(0, 100)}...</p>
                   </div>
                   <div className="flex space-x-2 ml-4">
                     <button

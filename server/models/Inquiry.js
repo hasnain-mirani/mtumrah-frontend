@@ -12,17 +12,38 @@ const responseSchema = new mongoose.Schema(
 
 const inquirySchema = new mongoose.Schema(
   {
-    customerName: { type: String, required: true },
-    customerEmail: { type: String, required: true },
-    customerPhone: { type: String },
+    // Customer Information
+    name: { type: String, required: true },
+    email: { type: String, required: true },
+    phone: { type: String },
+    subject: { type: String, required: true },
     message: { type: String, required: true },
+    
+    // Status and Priority
     status: {
       type: String,
-      enum: ["pending", "in-progress", "resolved"],
+      enum: ["pending", "responded", "resolved", "closed"],
       default: "pending",
     },
+    priority: {
+      type: String,
+      enum: ["low", "medium", "high", "urgent"],
+      default: "medium",
+    },
+    
+    // Assignment and Response
     assignedAgent: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     responses: [responseSchema],
+    
+    // Related booking (if inquiry is about a specific booking)
+    relatedBooking: { type: mongoose.Schema.Types.ObjectId, ref: "Booking" },
+    
+    // Admin approval for responses
+    approvalStatus: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
   },
   { timestamps: true }
 );

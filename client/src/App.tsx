@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
 import AuthScreen from './components/AuthScreen';
+import ContactPage from './pages/ContactPage';
 import Sidebar from './components/Sidebar';
 import AdminDashboard from './components/AdminDashboard';
 import AgentDashboard from './components/AgentDashboard';
@@ -112,11 +114,16 @@ const AppContent: React.FC = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <DataProvider>
-        <AppContent />
-      </DataProvider>
-    </AuthProvider>
+    <Router>
+      <AuthProvider>
+        <DataProvider>
+          <Routes>
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/*" element={<AppContent />} />
+          </Routes>
+        </DataProvider>
+      </AuthProvider>
+    </Router>
   );
 }
 
