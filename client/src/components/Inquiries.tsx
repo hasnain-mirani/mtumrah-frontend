@@ -141,9 +141,12 @@ const Inquiries: React.FC = () => {
         message: text, // Changed from 'response' to 'message' to match backend
       });
 
-      // Update inquiry status if admin
+      // Update inquiry status if admin and inquiry is still pending
       if (isAdmin) {
-        await http.put(`/api/inquiries/${inquiryId}`, { status: 'responded' });
+        const inquiry = inquiries.find(i => i.id === inquiryId);
+        if (inquiry && inquiry.status === 'pending') {
+          await http.put(`/api/inquiries/${inquiryId}`, { status: 'responded' });
+        }
       }
 
       // Refresh inquiries from the server
@@ -366,12 +369,12 @@ const Inquiries: React.FC = () => {
                     {expandedInquiry === inquiry.id ? 'Hide Details' : 'View Details'}
                   </button>
 
-                  {canEditInquiry(inquiry) && inquiry.status === 'pending' && (
+                  {canEditInquiry(inquiry) && inquiry.status !== 'closed' && (
                     <button
                       className="flex-1 sm:flex-none px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
                       onClick={() => startResponse(inquiry.id)}
                     >
-                      Respond
+                      {inquiry.status === 'responded' ? 'Add Response' : 'Respond'}
                     </button>
                   )}
 
