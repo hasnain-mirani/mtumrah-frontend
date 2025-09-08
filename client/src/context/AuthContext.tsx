@@ -17,7 +17,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Restore session on boot using token -> /api/auth/me
+  // Restore session on boot using token -> /api/auth/me or /api/agent/me
   useEffect(() => {
     const boot = async () => {
       try {
@@ -26,7 +26,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const token = localStorage.getItem("token");
         if (token) {
-          const res = await http.get("/api/auth/me");
+          // Try admin endpoint first, then agent endpoint
+          let res;
+          try {
+            res = await http.get("/api/auth/me");
+          } catch (adminError) {
+            try {
+              res = await http.get("/api/agent/me");
+            } catch (agentError) {
+              console.error("Both admin and agent session restoration failed:", { adminError, agentError });
+              throw new Error("Session restoration failed");
+            }
+          }
+          
           if (res?.data) {
             setUser(res.data);
             localStorage.setItem("user", JSON.stringify(res.data));
@@ -46,20 +58,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      const res = await http.post("/api/auth/login", { email, password });
-      // backend should return: { token, user }
-      const { token, user } = res.data || {};
-      if (!token || !user) return false;
+      // Try admin login first
+      let res;
+      try {
+        res = await http.post("/api/auth/login", { email, password });
+      } catch (adminError) {
+        // If admin login fails, try agent login
+        try {
+          res = await http.post("/api/agent/login", { email, password });
+        } catch (agentError) {
+          console.error("Both admin and agent login failed:", { adminError, agentError });
+          return false;
+        }
+      }
+
+      // backend should return: { token, user } or { token, _id, name, email, role }
+      const { token, user, _id, name, email: userEmail, role } = res.data || {};
+      
+      if (!token) return false;
+
+      // Normalize user object for both admin and agent responses
+      const normalizedUser = user || {
+        id: _id,
+        name,
+        email: userEmail,
+        role,
+        agentId: _id // Add agentId for agents
+      };
 
       localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(user));
-      setUser(user);
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+      setUser(normalizedUser);
       return true;
     } catch (err) {
       console.error("Login failed:", err);
       return false;
     }
-    
   };
 
   const logout = async () => {

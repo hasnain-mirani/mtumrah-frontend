@@ -110,7 +110,7 @@ const Inquiries: React.FC = () => {
   const [responseText, setResponseText] = useState('');
   const [respondingTo, setRespondingTo] = useState<string | null>(null);
   const [expandedInquiry, setExpandedInquiry] = useState<string | null>(null);
-  const canEditInquiry = (inq: UiInquiry) => isAdmin || inq.agentId === (user as any)?.agentId;
+  const canEditInquiry = (inq: UiInquiry) => isAdmin || inq.agentId === user?.id || inq.agentId === user?.agentId;
 
   // Map inquiries from context to UI format
   const list = useMemo(() => {
@@ -180,8 +180,8 @@ const Inquiries: React.FC = () => {
   };
 
   const displayInquiries = useMemo(() => {
-    // If you ever fetch global for agents, keep this filter:
-    return isAdmin ? list : list.filter((i) => i.agentId === (user as any)?.agentId);
+    // For agents, only show inquiries they created
+    return isAdmin ? list : list.filter((i) => i.agentId === user?.id || i.agentId === user?.agentId);
   }, [isAdmin, list, user]);
 
   const filteredInquiries = displayInquiries.filter((inquiry) => {

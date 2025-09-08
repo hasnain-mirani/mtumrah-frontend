@@ -7,7 +7,7 @@ dotenv.config();
 
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/mtumrah-portal');
+    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/mtumrah-portal');
     console.log('MongoDB Connected');
   } catch (error) {
     console.error('Database connection error:', error);
@@ -29,7 +29,7 @@ const seedAgents = async () => {
       {
         name: 'Ahmed Hassan',
         email: 'ahmed@example.com',
-        passwordHash: await bcrypt.hash('password123', 10),
+        passwordHash: 'password123', // Let the model's pre-save middleware hash it
         phone: '+966 50 123 4567',
         monthlyTarget: 10000,
         commissionRate: 5.0,
@@ -39,7 +39,7 @@ const seedAgents = async () => {
       {
         name: 'Fatima Al-Zahra',
         email: 'fatima@example.com',
-        passwordHash: await bcrypt.hash('password123', 10),
+        passwordHash: 'password123', // Let the model's pre-save middleware hash it
         phone: '+966 50 234 5678',
         monthlyTarget: 8000,
         commissionRate: 4.5,
@@ -49,7 +49,7 @@ const seedAgents = async () => {
       {
         name: 'Omar Abdullah',
         email: 'omar@example.com',
-        passwordHash: await bcrypt.hash('password123', 10),
+        passwordHash: 'password123', // Let the model's pre-save middleware hash it
         phone: '+966 50 345 6789',
         monthlyTarget: 12000,
         commissionRate: 6.0,
@@ -58,8 +58,16 @@ const seedAgents = async () => {
       }
     ];
 
-    await Agent.insertMany(agents);
+    // Create agents one by one to trigger pre-save middleware
+    const createdAgents = [];
+    for (const agentData of agents) {
+      const agent = new Agent(agentData);
+      await agent.save();
+      createdAgents.push(agent);
+    }
+    
     console.log('Test agents created successfully!');
+    console.log('Created agents:', createdAgents.map(a => ({ email: a.email, name: a.name })));
   } catch (error) {
     console.error('Error seeding agents:', error);
   }

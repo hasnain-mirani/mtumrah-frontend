@@ -9,12 +9,14 @@ const AgentDashboard: React.FC = () => {
   const { bookings, inquiries, analytics } = useData();
 
   // Filter data for current agent
-  const agentBookings = bookings.filter(b => b.agentId === user?.agentId);
-  const agentInquiries = inquiries.filter(i => i.agentId === user?.agentId);
+  const agentBookings = bookings.filter(b => b.agentId === user?.id || b.agentId === user?.agentId);
+  const agentInquiries = inquiries.filter(i => i.agentId === user?.id || i.agentId === user?.agentId);
   
-  const agentRevenue = agentBookings.reduce((sum, b) => 
-    sum + parseInt(b.amount.replace(/[$,]/g, '')), 0
-  );
+  const agentRevenue = agentBookings.reduce((sum, b) => {
+    const amount = b.amount || b.totalAmount;
+    if (!amount || typeof amount !== 'string') return sum;
+    return sum + parseInt(amount.replace(/[$,]/g, ''));
+  }, 0);
 
   const pendingApprovals = [
     ...agentBookings.filter(b => b.approvalStatus === 'pending'),
@@ -59,13 +61,6 @@ const AgentDashboard: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Agent Dashboard</h1>
           <p className="text-gray-600">Welcome back, {user?.name}</p>
-        </div>
-        <div className="mt-4 sm:mt-0">
-          <select className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-            <option>This Month</option>
-            <option>This Week</option>
-            <option>Today</option>
-          </select>
         </div>
       </div>
 

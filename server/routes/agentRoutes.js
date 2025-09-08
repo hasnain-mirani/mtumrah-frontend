@@ -4,6 +4,7 @@ import {
   loginAgent,
   getAgents,
   getAgentById,
+  getMeAgent,
   updateAgent,
   deleteAgent,
   updateAgentPerformance,
@@ -17,6 +18,7 @@ const router = express.Router();
 // ✅ Specific routes first (before dynamic ones)
 router.post("/register", protect, admin, registerAgent);
 router.post("/login", loginAgent);
+router.get("/me", protect, getMeAgent);
 
 // Performance routes (must be before /:id routes)
 router.get("/performance", protect, admin, getAgentsWithPerformance);

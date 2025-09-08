@@ -210,7 +210,7 @@ export const rejectBooking = async (req, res) => {
 // @access  Private
 export const getMyBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({ agent: req.user._id });
+    const bookings = await Booking.find({ agent: req.user._id }).populate("agent", "name email");
     res.json(bookings);
   } catch (error) {
     res.status(500).json({ message: "Server error" });

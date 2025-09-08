@@ -75,7 +75,7 @@ function mapBooking(b: any): UiBooking {
   const status = (b?.status ?? 'pending') as UiBooking['status'];
   const approvalStatus = b?.approvalStatus ?? 'pending';
 
-  const agentId = b?.agentId ?? b?.agent?.id;
+  const agentId = b?.agentId ?? b?.agent?._id ?? b?.agent?.id;
   const agentName = b?.agentName ?? b?.agent?.name ?? '';
 
   return {
@@ -225,8 +225,19 @@ const Bookings: React.FC = () => {
   };
 
   const displayBookings = useMemo(() => {
-    // For agents we already fetched /my, but if you later switch to global fetch:
-    return isAdmin ? bookings : bookings.filter((b) => b.agentId === (user as any)?.agentId);
+    console.log('Bookings - user:', user);
+    console.log('Bookings - isAdmin:', isAdmin);
+    console.log('Bookings - bookings count:', bookings.length);
+    console.log('Bookings - first booking agentId:', bookings[0]?.agentId);
+    
+    // For agents, only show bookings they created
+    const filtered = isAdmin ? bookings : bookings.filter((b) => {
+      console.log('Filtering booking:', b.customer, 'agentId:', b.agentId, 'vs user.id:', user?.id, 'vs user.agentId:', user?.agentId);
+      return b.agentId === user?.id || b.agentId === user?.agentId;
+    });
+    
+    console.log('Bookings - filtered count:', filtered.length);
+    return filtered;
   }, [bookings, isAdmin, user]);
 
   const filteredBookings = displayBookings.filter((booking) => {

@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import asyncHandler from "express-async-handler";
 import User from "../models/User.js";
+import Agent from "../models/Agent.js";
 
 export const protect = asyncHandler(async (req, res, next) => {
   let token;
@@ -14,9 +15,24 @@ export const protect = asyncHandler(async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select("-passwordHash");
-    if (!req.user) throw new Error("User not found");
-    next();
+    
+    // Try to find user first (admin)
+    let user = await User.findById(decoded.id).select("-passwordHash");
+    if (user) {
+      req.user = user;
+      next();
+      return;
+    }
+    
+    // If not found in User model, try Agent model
+    let agent = await Agent.findById(decoded.id).select("-passwordHash");
+    if (agent) {
+      req.user = agent;
+      next();
+      return;
+    }
+    
+    throw new Error("User not found");
   } catch (error) {
     res.status(401);
     throw new Error("Not authorized, token failed");

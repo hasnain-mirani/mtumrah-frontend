@@ -72,6 +72,27 @@ export const getAgentById = async (req, res) => {
   else res.status(404).json({ message: "Agent not found" });
 };
 
+// Get current agent profile
+export const getMeAgent = async (req, res) => {
+  const agent = await Agent.findById(req.user._id).select('-passwordHash');
+  if (agent) {
+    res.json({
+      id: agent._id,
+      name: agent.name,
+      email: agent.email,
+      phone: agent.phone,
+      role: agent.role,
+      monthlyTarget: agent.monthlyTarget,
+      commissionRate: agent.commissionRate,
+      department: agent.department,
+      isActive: agent.isActive,
+      agentId: agent._id
+    });
+  } else {
+    res.status(404).json({ message: "Agent not found" });
+  }
+};
+
 // Update Agent (Admin or Self)
 export const updateAgent = async (req, res) => {
   const agent = await Agent.findById(req.params.id);

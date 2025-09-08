@@ -34,9 +34,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Fetch agents from API
   const fetchAgents = React.useCallback(async () => {
     try {
-      const { data } = await http.get('/api/agent/performance');
-      const agentsList = Array.isArray(data) ? data : data?.data || data?.agents || [];
-      setAgents(agentsList);
+      // Get user from localStorage to determine role
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      
+      // Only fetch agents data for admins
+      if (user.role === 'admin') {
+        const { data } = await http.get('/api/agent/performance');
+        const agentsList = Array.isArray(data) ? data : data?.data || data?.agents || [];
+        setAgents(agentsList);
+      } else {
+        // For agents, set empty array or skip
+        setAgents([]);
+      }
     } catch (error) {
       console.error('Failed to fetch agents:', error);
       setAgents([]);
@@ -46,12 +55,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Fetch bookings from API
   const fetchBookings = React.useCallback(async () => {
     try {
-      const { data } = await http.get('/api/bookings');
+      // Get user from localStorage to determine role
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const endpoint = user.role === 'admin' ? '/api/bookings' : '/api/bookings/my';
+      
+      const { data } = await http.get(endpoint);
       const bookingsList = Array.isArray(data) ? data : data?.data || data?.bookings || [];
-      // Map _id to id for consistency
+      // Map _id to id for consistency and extract agentId from populated agent object
       const mappedBookings = bookingsList.map(booking => ({
         ...booking,
-        id: booking._id || booking.id
+        id: booking._id || booking.id,
+        agentId: booking.agent?._id || booking.agent || booking.agentId,
+        agentName: booking.agent?.name || booking.agentName,
+        amount: booking.amount || booking.totalAmount // Map totalAmount to amount for consistency
       }));
       setBookings(mappedBookings);
     } catch (error) {
@@ -65,10 +81,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data } = await http.get('/api/inquiries');
       const inquiriesList = Array.isArray(data) ? data : data?.data || data?.inquiries || [];
-      // Map _id to id for consistency
+      // Map _id to id for consistency and extract agentId from populated assignedAgent object
       const mappedInquiries = inquiriesList.map(inquiry => ({
         ...inquiry,
-        id: inquiry._id || inquiry.id
+        id: inquiry._id || inquiry.id,
+        agentId: inquiry.assignedAgent?._id || inquiry.assignedAgent || inquiry.agentId,
+        agentName: inquiry.assignedAgent?.name || inquiry.agentName
       }));
       setInquiries(mappedInquiries);
     } catch (error) {

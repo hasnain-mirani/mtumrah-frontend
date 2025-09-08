@@ -87,7 +87,7 @@ const bookingSchema = new mongoose.Schema(
     },
     
     // Agent Information
-    agent: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    agent: { type: mongoose.Schema.Types.ObjectId, ref: "Agent", required: true },
     
     // Customer Grouping (for multiple bookings from same customer)
     customerGroup: { type: String }, // Will be set to customerEmail for grouping
