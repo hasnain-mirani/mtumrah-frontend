@@ -230,7 +230,8 @@ export const downloadBookingPDF = async (req, res) => {
     }
 
     // Check authorization
-    if (booking.agent.toString() !== req.user._id.toString() && req.user.role !== "admin") {
+    const agentId = booking.agent ? booking.agent._id || booking.agent.toString() : null;
+    if (agentId !== req.user._id.toString() && req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
 
@@ -239,7 +240,7 @@ export const downloadBookingPDF = async (req, res) => {
 
     // Set response headers
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="booking-${booking._id}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="booking-${booking._id || 'unknown'}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
 
     // Send PDF
