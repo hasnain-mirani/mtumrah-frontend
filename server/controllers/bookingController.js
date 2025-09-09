@@ -230,7 +230,19 @@ export const downloadBookingPDF = async (req, res) => {
     }
 
     // Check authorization
-    const agentId = booking.agent ? booking.agent._id || booking.agent.toString() : null;
+    let agentId = null;
+    if (booking.agent) {
+      // Handle both populated and non-populated agent references
+      agentId = booking.agent._id ? booking.agent._id.toString() : booking.agent.toString();
+    }
+    
+    console.log('PDF Authorization Check:', {
+      bookingAgentId: agentId,
+      userId: req.user._id.toString(),
+      userRole: req.user.role,
+      isAuthorized: agentId === req.user._id.toString() || req.user.role === "admin"
+    });
+    
     if (agentId !== req.user._id.toString() && req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
