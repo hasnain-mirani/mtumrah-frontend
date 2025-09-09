@@ -1,5 +1,6 @@
 import Booking from "../models/Booking.js";
 import { sendBookingConfirmationEmail } from "../utils/emailService.js";
+import { generateBookingPDF } from "../utils/pdfService.js";
 
 // @desc    Create new booking
 // @route   POST /api/bookings
@@ -214,5 +215,38 @@ export const getMyBookings = async (req, res) => {
     res.json(bookings);
   } catch (error) {
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// @desc    Download booking PDF
+// @route   GET /api/bookings/:id/pdf
+// @access  Private (owner or admin)
+export const downloadBookingPDF = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id).populate("agent", "name email");
+    
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    // Check authorization
+    if (booking.agent.toString() !== req.user._id.toString() && req.user.role !== "admin") {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    // Generate PDF
+    const pdfBuffer = await generateBookingPDF(booking);
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="booking-${booking._id}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    // Send PDF
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error('PDF generation error:', error);
+    res.status(500).json({ message: "Error generating PDF" });
   }
 };

@@ -8,6 +8,7 @@ import {
   getMyBookings,
   approveBooking,
   rejectBooking,
+  downloadBookingPDF,
 } from "../controllers/bookingController.js";
 import { protect, admin } from "../middleware/authMiddleware.js";
 
@@ -28,6 +29,8 @@ router.route("/:id")
 router.put("/:id/approve", protect, admin, approveBooking);
 router.put("/:id/reject", protect, admin, rejectBooking);
 
+// PDF download route
+router.get("/:id/pdf", protect, downloadBookingPDF);
 
 export default router;
 // server.js (routes mount ho jane ke BAAD ye lines add karein)

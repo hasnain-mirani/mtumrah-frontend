@@ -16,6 +16,7 @@ import {
   XCircle,
   Edit,
   Trash2,
+  Download,
 } from 'lucide-react';
 
 type UiBooking = {
@@ -195,6 +196,28 @@ const Bookings: React.FC = () => {
     } catch (error: any) {
       console.error('Update failed:', error);
       alert('Failed to update booking status');
+    }
+  };
+
+  // Download PDF
+  const handleDownloadPDF = async (bookingId: string) => {
+    try {
+      const response = await http.get(`/api/bookings/${bookingId}/pdf`, {
+        responseType: 'blob'
+      });
+      
+      // Create blob link to download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `booking-${bookingId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('PDF download failed:', error);
+      alert('Failed to download PDF');
     }
   };
 
@@ -525,6 +548,13 @@ const Bookings: React.FC = () => {
 
             {/* Actions */}
             <div className="flex space-x-2">
+              <button
+                onClick={() => handleDownloadPDF(booking.id)}
+                className="flex-1 px-3 py-2 text-xs sm:text-sm font-medium text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors flex items-center justify-center space-x-1"
+              >
+                <Download className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span>PDF</span>
+              </button>
               <button
                 onClick={() => handleEdit(booking)}
                 className="flex-1 px-3 py-2 text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors flex items-center justify-center space-x-1"

@@ -10,7 +10,8 @@ import {
   CheckCircle, 
   Clock, 
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  Download
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
@@ -108,6 +109,34 @@ const AdminDashboard: React.FC = () => {
     await rejectChange('inquiry', inquiryId);
   };
 
+  // Download PDF
+  const handleDownloadPDF = async (bookingId: string) => {
+    try {
+      const response = await fetch(`/api/bookings/${bookingId}/pdf`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download PDF');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `booking-${bookingId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('PDF download failed:', error);
+      alert('Failed to download PDF');
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -185,6 +214,13 @@ const AdminDashboard: React.FC = () => {
                     <p className="text-sm text-gray-600">Email: {booking.email}</p>
                   </div>
                   <div className="flex space-x-2 ml-4">
+                    <button
+                      onClick={() => handleDownloadPDF(booking.id)}
+                      className="flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>PDF</span>
+                    </button>
                     <button
                       onClick={() => handleApproveBooking(booking.id)}
                       className="flex items-center space-x-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
