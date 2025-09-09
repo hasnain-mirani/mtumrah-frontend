@@ -1,6 +1,4 @@
 import PDFDocument from 'pdfkit';
-import fs from 'fs';
-import path from 'path';
 
 export const generateBookingPDF = async (booking) => {
   return new Promise((resolve, reject) => {
@@ -10,7 +8,7 @@ export const generateBookingPDF = async (booking) => {
         size: 'A4',
         margin: 50,
         info: {
-          Title: `Booking Confirmation - ${booking.customerName}`,
+          Title: `Booking Confirmation - ${booking.customerName || 'Unknown'}`,
           Author: 'MT Umrah Portal',
           Subject: 'Booking Confirmation',
           Keywords: 'umrah, hajj, booking, travel',
@@ -25,6 +23,29 @@ export const generateBookingPDF = async (booking) => {
         const pdfData = Buffer.concat(buffers);
         resolve(pdfData);
       });
+      
+      doc.on('error', (error) => {
+        console.error('PDF generation error:', error);
+        reject(error);
+      });
+
+      // Helper function to safely get values
+      const safeGet = (obj, key, defaultValue = 'N/A') => {
+        try {
+          return obj && obj[key] ? obj[key] : defaultValue;
+        } catch {
+          return defaultValue;
+        }
+      };
+
+      // Helper function to format dates
+      const formatDate = (date) => {
+        try {
+          return date ? new Date(date).toLocaleDateString() : 'N/A';
+        } catch {
+          return 'N/A';
+        }
+      };
 
       // Header
       doc.fontSize(24)
@@ -37,10 +58,10 @@ export const generateBookingPDF = async (booking) => {
       // Booking ID and Date
       doc.fontSize(12)
          .fillColor('#34495e')
-         .text(`Booking ID: ${booking._id}`, 50, 120)
-         .text(`Booking Date: ${new Date(booking.createdAt).toLocaleDateString()}`, 50, 140)
-         .text(`Status: ${booking.status.toUpperCase()}`, 50, 160)
-         .text(`Approval: ${booking.approvalStatus.toUpperCase()}`, 50, 180);
+         .text(`Booking ID: ${safeGet(booking, '_id')}`, 50, 120)
+         .text(`Booking Date: ${formatDate(booking.createdAt)}`, 50, 140)
+         .text(`Status: ${safeGet(booking, 'status', 'pending').toUpperCase()}`, 50, 160)
+         .text(`Approval: ${safeGet(booking, 'approvalStatus', 'pending').toUpperCase()}`, 50, 180);
 
       // Line separator
       doc.moveTo(50, 200)
@@ -54,12 +75,12 @@ export const generateBookingPDF = async (booking) => {
 
       doc.fontSize(12)
          .fillColor('#34495e')
-         .text(`Name: ${booking.customerName}`, 50, 250)
-         .text(`Email: ${booking.customerEmail}`, 50, 270)
-         .text(`Contact: ${booking.contactNumber || 'N/A'}`, 50, 290)
-         .text(`Passengers: ${booking.passengers || 'N/A'}`, 50, 310)
-         .text(`Adults: ${booking.adults || 'N/A'}`, 50, 330)
-         .text(`Children: ${booking.children || 'N/A'}`, 50, 350);
+         .text(`Name: ${safeGet(booking, 'customerName')}`, 50, 250)
+         .text(`Email: ${safeGet(booking, 'customerEmail')}`, 50, 270)
+         .text(`Contact: ${safeGet(booking, 'contactNumber')}`, 50, 290)
+         .text(`Passengers: ${safeGet(booking, 'passengers')}`, 50, 310)
+         .text(`Adults: ${safeGet(booking, 'adults')}`, 50, 330)
+         .text(`Children: ${safeGet(booking, 'children')}`, 50, 350);
 
       // Package Information Section
       doc.fontSize(16)
@@ -68,11 +89,11 @@ export const generateBookingPDF = async (booking) => {
 
       doc.fontSize(12)
          .fillColor('#34495e')
-         .text(`Package: ${booking.package}`, 50, 410)
-         .text(`Price: ${booking.packagePrice || 'N/A'}`, 50, 430)
-         .text(`Total Amount: ${booking.totalAmount || 'N/A'}`, 50, 450)
-         .text(`Payment Method: ${booking.paymentMethod || 'N/A'}`, 50, 470)
-         .text(`Additional Services: ${booking.additionalServices || 'N/A'}`, 50, 490);
+         .text(`Package: ${safeGet(booking, 'package')}`, 50, 410)
+         .text(`Price: ${safeGet(booking, 'packagePrice')}`, 50, 430)
+         .text(`Total Amount: ${safeGet(booking, 'totalAmount')}`, 50, 450)
+         .text(`Payment Method: ${safeGet(booking, 'paymentMethod')}`, 50, 470)
+         .text(`Additional Services: ${safeGet(booking, 'additionalServices')}`, 50, 490);
 
       // Travel Dates Section
       doc.fontSize(16)
@@ -81,9 +102,9 @@ export const generateBookingPDF = async (booking) => {
 
       doc.fontSize(12)
          .fillColor('#34495e')
-         .text(`Travel Date: ${new Date(booking.date).toLocaleDateString()}`, 50, 550)
-         .text(`Departure: ${booking.departureDate ? new Date(booking.departureDate).toLocaleDateString() : 'N/A'}`, 50, 570)
-         .text(`Return: ${booking.returnDate ? new Date(booking.returnDate).toLocaleDateString() : 'N/A'}`, 50, 590);
+         .text(`Travel Date: ${formatDate(booking.date)}`, 50, 550)
+         .text(`Departure: ${formatDate(booking.departureDate)}`, 50, 570)
+         .text(`Return: ${formatDate(booking.returnDate)}`, 50, 590);
 
       // Flight Information (if available)
       if (booking.flight && (booking.flight.departureCity || booking.flight.arrivalCity)) {
@@ -93,9 +114,9 @@ export const generateBookingPDF = async (booking) => {
 
         doc.fontSize(12)
            .fillColor('#34495e')
-           .text(`From: ${booking.flight.departureCity || 'N/A'}`, 50, 650)
-           .text(`To: ${booking.flight.arrivalCity || 'N/A'}`, 50, 670)
-           .text(`Class: ${booking.flight.flightClass || 'N/A'}`, 50, 690);
+           .text(`From: ${safeGet(booking.flight, 'departureCity')}`, 50, 650)
+           .text(`To: ${safeGet(booking.flight, 'arrivalCity')}`, 50, 670)
+           .text(`Class: ${safeGet(booking.flight, 'flightClass')}`, 50, 690);
       }
 
       // Hotel Information (if available)
@@ -108,10 +129,10 @@ export const generateBookingPDF = async (booking) => {
 
         doc.fontSize(12)
            .fillColor('#34495e')
-           .text(`Hotel: ${booking.hotel.hotelName}`, 50, hotelY + 30)
-           .text(`Room Type: ${booking.hotel.roomType || 'N/A'}`, 50, hotelY + 50)
-           .text(`Check-in: ${booking.hotel.checkIn ? new Date(booking.hotel.checkIn).toLocaleDateString() : 'N/A'}`, 50, hotelY + 70)
-           .text(`Check-out: ${booking.hotel.checkOut ? new Date(booking.hotel.checkOut).toLocaleDateString() : 'N/A'}`, 50, hotelY + 90);
+           .text(`Hotel: ${safeGet(booking.hotel, 'hotelName')}`, 50, hotelY + 30)
+           .text(`Room Type: ${safeGet(booking.hotel, 'roomType')}`, 50, hotelY + 50)
+           .text(`Check-in: ${formatDate(booking.hotel.checkIn)}`, 50, hotelY + 70)
+           .text(`Check-out: ${formatDate(booking.hotel.checkOut)}`, 50, hotelY + 90);
       }
 
       // Visa Information (if available)
@@ -126,9 +147,9 @@ export const generateBookingPDF = async (booking) => {
 
         doc.fontSize(12)
            .fillColor('#34495e')
-           .text(`Type: ${booking.visa.visaType || 'N/A'}`, 50, visaY + 30)
-           .text(`Passport: ${booking.visa.passportNumber || 'N/A'}`, 50, visaY + 50)
-           .text(`Nationality: ${booking.visa.nationality || 'N/A'}`, 50, visaY + 70);
+           .text(`Type: ${safeGet(booking.visa, 'visaType')}`, 50, visaY + 30)
+           .text(`Passport: ${safeGet(booking.visa, 'passportNumber')}`, 50, visaY + 50)
+           .text(`Nationality: ${safeGet(booking.visa, 'nationality')}`, 50, visaY + 70);
       }
 
       // Transport Information (if available)
@@ -147,8 +168,8 @@ export const generateBookingPDF = async (booking) => {
 
         doc.fontSize(12)
            .fillColor('#34495e')
-           .text(`Type: ${booking.transport.transportType}`, 50, transportY + 30)
-           .text(`Pickup: ${booking.transport.pickupLocation || 'N/A'}`, 50, transportY + 50);
+           .text(`Type: ${safeGet(booking.transport, 'transportType')}`, 50, transportY + 30)
+           .text(`Pickup: ${safeGet(booking.transport, 'pickupLocation')}`, 50, transportY + 50);
       }
 
       // Footer
@@ -163,6 +184,7 @@ export const generateBookingPDF = async (booking) => {
       doc.end();
 
     } catch (error) {
+      console.error('PDF generation error:', error);
       reject(error);
     }
   });
@@ -175,7 +197,7 @@ export const generateBookingPDFFile = async (booking, filePath) => {
         size: 'A4',
         margin: 50,
         info: {
-          Title: `Booking Confirmation - ${booking.customerName}`,
+          Title: `Booking Confirmation - ${booking.customerName || 'Unknown'}`,
           Author: 'MT Umrah Portal',
           Subject: 'Booking Confirmation',
           Keywords: 'umrah, hajj, booking, travel',
@@ -199,53 +221,10 @@ export const generateBookingPDFFile = async (booking, filePath) => {
       // Booking ID and Date
       doc.fontSize(12)
          .fillColor('#34495e')
-         .text(`Booking ID: ${booking._id}`, 50, 120)
-         .text(`Booking Date: ${new Date(booking.createdAt).toLocaleDateString()}`, 50, 140)
-         .text(`Status: ${booking.status.toUpperCase()}`, 50, 160)
-         .text(`Approval: ${booking.approvalStatus.toUpperCase()}`, 50, 180);
-
-      // Line separator
-      doc.moveTo(50, 200)
-         .lineTo(550, 200)
-         .stroke('#bdc3c7');
-
-      // Customer Information Section
-      doc.fontSize(16)
-         .fillColor('#2c3e50')
-         .text('Customer Information', 50, 220);
-
-      doc.fontSize(12)
-         .fillColor('#34495e')
-         .text(`Name: ${booking.customerName}`, 50, 250)
-         .text(`Email: ${booking.customerEmail}`, 50, 270)
-         .text(`Contact: ${booking.contactNumber || 'N/A'}`, 50, 290)
-         .text(`Passengers: ${booking.passengers || 'N/A'}`, 50, 310)
-         .text(`Adults: ${booking.adults || 'N/A'}`, 50, 330)
-         .text(`Children: ${booking.children || 'N/A'}`, 50, 350);
-
-      // Package Information Section
-      doc.fontSize(16)
-         .fillColor('#2c3e50')
-         .text('Package Information', 50, 380);
-
-      doc.fontSize(12)
-         .fillColor('#34495e')
-         .text(`Package: ${booking.package}`, 50, 410)
-         .text(`Price: ${booking.packagePrice || 'N/A'}`, 50, 430)
-         .text(`Total Amount: ${booking.totalAmount || 'N/A'}`, 50, 450)
-         .text(`Payment Method: ${booking.paymentMethod || 'N/A'}`, 50, 470)
-         .text(`Additional Services: ${booking.additionalServices || 'N/A'}`, 50, 490);
-
-      // Travel Dates Section
-      doc.fontSize(16)
-         .fillColor('#2c3e50')
-         .text('Travel Information', 50, 520);
-
-      doc.fontSize(12)
-         .fillColor('#34495e')
-         .text(`Travel Date: ${new Date(booking.date).toLocaleDateString()}`, 50, 550)
-         .text(`Departure: ${booking.departureDate ? new Date(booking.departureDate).toLocaleDateString() : 'N/A'}`, 50, 570)
-         .text(`Return: ${booking.returnDate ? new Date(booking.returnDate).toLocaleDateString() : 'N/A'}`, 50, 590);
+         .text(`Booking ID: ${booking._id || 'N/A'}`, 50, 120)
+         .text(`Booking Date: ${booking.createdAt ? new Date(booking.createdAt).toLocaleDateString() : 'N/A'}`, 50, 140)
+         .text(`Status: ${(booking.status || 'pending').toUpperCase()}`, 50, 160)
+         .text(`Approval: ${(booking.approvalStatus || 'pending').toUpperCase()}`, 50, 180);
 
       // Footer
       const footerY = doc.page.height - 100;
