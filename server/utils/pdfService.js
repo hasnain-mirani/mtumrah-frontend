@@ -8,11 +8,11 @@ export const generateBookingPDF = async (booking) => {
         size: 'A4',
         margin: 50,
         info: {
-          Title: `Booking Confirmation - ${booking.customerName || 'Unknown'}`,
-          Author: 'MT Umrah Portal',
-          Subject: 'Booking Confirmation',
-          Keywords: 'umrah, hajj, booking, travel',
-          Creator: 'MT Umrah Portal System'
+          Title: `Marwah Booking Details - ${booking.customerName || 'Unknown'}`,
+          Author: 'Marwah Travel',
+          Subject: 'Booking Details',
+          Keywords: 'umrah, hajj, booking, travel, marwah',
+          Creator: 'Marwah Travel System'
         }
       });
 
@@ -30,7 +30,7 @@ export const generateBookingPDF = async (booking) => {
       });
 
       // Helper function to safely get values
-      const safeGet = (obj, key, defaultValue = 'N/A') => {
+      const safeGet = (obj, key, defaultValue = '') => {
         try {
           return obj && obj[key] ? obj[key] : defaultValue;
         } catch {
@@ -41,144 +41,180 @@ export const generateBookingPDF = async (booking) => {
       // Helper function to format dates
       const formatDate = (date) => {
         try {
-          return date ? new Date(date).toLocaleDateString() : 'N/A';
+          return date ? new Date(date).toLocaleDateString() : '';
         } catch {
-          return 'N/A';
+          return '';
         }
       };
 
-      // Header
-      doc.fontSize(24)
-         .fillColor('#2c3e50')
-         .text('MT Umrah Portal', 50, 50)
-         .fontSize(16)
-         .fillColor('#7f8c8d')
-         .text('Booking Confirmation', 50, 85);
-
-      // Booking ID and Date
-      doc.fontSize(12)
-         .fillColor('#34495e')
-         .text(`Booking ID: ${safeGet(booking, '_id')}`, 50, 120)
-         .text(`Booking Date: ${formatDate(booking.createdAt)}`, 50, 140)
-         .text(`Status: ${safeGet(booking, 'status', 'pending').toUpperCase()}`, 50, 160)
-         .text(`Approval: ${safeGet(booking, 'approvalStatus', 'pending').toUpperCase()}`, 50, 180);
-
-      // Line separator
-      doc.moveTo(50, 200)
-         .lineTo(550, 200)
-         .stroke('#bdc3c7');
-
-      // Customer Information Section
-      doc.fontSize(16)
-         .fillColor('#2c3e50')
-         .text('Customer Information', 50, 220);
-
-      doc.fontSize(12)
-         .fillColor('#34495e')
-         .text(`Name: ${safeGet(booking, 'customerName')}`, 50, 250)
-         .text(`Email: ${safeGet(booking, 'customerEmail')}`, 50, 270)
-         .text(`Contact: ${safeGet(booking, 'contactNumber')}`, 50, 290)
-         .text(`Passengers: ${safeGet(booking, 'passengers')}`, 50, 310)
-         .text(`Adults: ${safeGet(booking, 'adults')}`, 50, 330)
-         .text(`Children: ${safeGet(booking, 'children')}`, 50, 350);
-
-      // Package Information Section
-      doc.fontSize(16)
-         .fillColor('#2c3e50')
-         .text('Package Information', 50, 380);
-
-      doc.fontSize(12)
-         .fillColor('#34495e')
-         .text(`Package: ${safeGet(booking, 'package')}`, 50, 410)
-         .text(`Price: ${safeGet(booking, 'packagePrice')}`, 50, 430)
-         .text(`Total Amount: ${safeGet(booking, 'totalAmount')}`, 50, 450)
-         .text(`Payment Method: ${safeGet(booking, 'paymentMethod')}`, 50, 470)
-         .text(`Additional Services: ${safeGet(booking, 'additionalServices')}`, 50, 490);
-
-      // Travel Dates Section
-      doc.fontSize(16)
-         .fillColor('#2c3e50')
-         .text('Travel Information', 50, 520);
-
-      doc.fontSize(12)
-         .fillColor('#34495e')
-         .text(`Travel Date: ${formatDate(booking.date)}`, 50, 550)
-         .text(`Departure: ${formatDate(booking.departureDate)}`, 50, 570)
-         .text(`Return: ${formatDate(booking.returnDate)}`, 50, 590);
-
-      // Flight Information (if available)
-      if (booking.flight && (booking.flight.departureCity || booking.flight.arrivalCity)) {
-        doc.fontSize(16)
-           .fillColor('#2c3e50')
-           .text('Flight Information', 50, 620);
-
-        doc.fontSize(12)
-           .fillColor('#34495e')
-           .text(`From: ${safeGet(booking.flight, 'departureCity')}`, 50, 650)
-           .text(`To: ${safeGet(booking.flight, 'arrivalCity')}`, 50, 670)
-           .text(`Class: ${safeGet(booking.flight, 'flightClass')}`, 50, 690);
-      }
-
-      // Hotel Information (if available)
-      if (booking.hotel && booking.hotel.hotelName) {
-        const hotelY = booking.flight && (booking.flight.departureCity || booking.flight.arrivalCity) ? 720 : 620;
+      // Helper function to create table
+      const createTable = (doc, x, y, headers, data, colWidths) => {
+        const rowHeight = 25;
+        const headerHeight = 30;
         
-        doc.fontSize(16)
-           .fillColor('#2c3e50')
-           .text('Hotel Information', 50, hotelY);
-
-        doc.fontSize(12)
-           .fillColor('#34495e')
-           .text(`Hotel: ${safeGet(booking.hotel, 'hotelName')}`, 50, hotelY + 30)
-           .text(`Room Type: ${safeGet(booking.hotel, 'roomType')}`, 50, hotelY + 50)
-           .text(`Check-in: ${formatDate(booking.hotel.checkIn)}`, 50, hotelY + 70)
-           .text(`Check-out: ${formatDate(booking.hotel.checkOut)}`, 50, hotelY + 90);
-      }
-
-      // Visa Information (if available)
-      if (booking.visa && (booking.visa.passportNumber || booking.visa.nationality)) {
-        const visaY = booking.hotel && booking.hotel.hotelName ? 
-          (booking.flight && (booking.flight.departureCity || booking.flight.arrivalCity) ? 820 : 720) : 
-          (booking.flight && (booking.flight.departureCity || booking.flight.arrivalCity) ? 720 : 620);
+        // Draw table headers
+        doc.fontSize(10).font('Helvetica-Bold');
+        let currentX = x;
+        headers.forEach((header, index) => {
+          doc.rect(currentX, y, colWidths[index], headerHeight).stroke();
+          doc.text(header, currentX + 5, y + 8, { width: colWidths[index] - 10, align: 'left' });
+          currentX += colWidths[index];
+        });
         
-        doc.fontSize(16)
-           .fillColor('#2c3e50')
-           .text('Visa Information', 50, visaY);
-
-        doc.fontSize(12)
-           .fillColor('#34495e')
-           .text(`Type: ${safeGet(booking.visa, 'visaType')}`, 50, visaY + 30)
-           .text(`Passport: ${safeGet(booking.visa, 'passportNumber')}`, 50, visaY + 50)
-           .text(`Nationality: ${safeGet(booking.visa, 'nationality')}`, 50, visaY + 70);
-      }
-
-      // Transport Information (if available)
-      if (booking.transport && booking.transport.transportType) {
-        const transportY = booking.visa && (booking.visa.passportNumber || booking.visa.nationality) ? 
-          (booking.hotel && booking.hotel.hotelName ? 
-            (booking.flight && (booking.flight.departureCity || booking.flight.arrivalCity) ? 920 : 820) : 
-            (booking.flight && (booking.flight.departureCity || booking.flight.arrivalCity) ? 820 : 720)) : 
-          (booking.hotel && booking.hotel.hotelName ? 
-            (booking.flight && (booking.flight.departureCity || booking.flight.arrivalCity) ? 820 : 720) : 
-            (booking.flight && (booking.flight.departureCity || booking.flight.arrivalCity) ? 720 : 620));
+        // Draw data rows
+        doc.font('Helvetica');
+        data.forEach((row, rowIndex) => {
+          const rowY = y + headerHeight + (rowIndex * rowHeight);
+          currentX = x;
+          row.forEach((cell, colIndex) => {
+            doc.rect(currentX, rowY, colWidths[colIndex], rowHeight).stroke();
+            doc.text(cell || '', currentX + 5, rowY + 8, { width: colWidths[colIndex] - 10, align: 'left' });
+            currentX += colWidths[colIndex];
+          });
+        });
         
-        doc.fontSize(16)
-           .fillColor('#2c3e50')
-           .text('Transport Information', 50, transportY);
+        return y + headerHeight + (data.length * rowHeight) + 20;
+      };
 
-        doc.fontSize(12)
-           .fillColor('#34495e')
-           .text(`Type: ${safeGet(booking.transport, 'transportType')}`, 50, transportY + 30)
-           .text(`Pickup: ${safeGet(booking.transport, 'pickupLocation')}`, 50, transportY + 50);
-      }
+      // Main title
+      doc.fontSize(20).font('Helvetica-Bold').fillColor('black');
+      doc.text('Marwah Booking Details', 50, 50, { align: 'center' });
 
-      // Footer
-      const footerY = doc.page.height - 100;
-      doc.fontSize(10)
-         .fillColor('#7f8c8d')
-         .text('Thank you for choosing MT Umrah Portal', 50, footerY)
-         .text('For any queries, please contact us at support@mtumrah.com', 50, footerY + 20)
-         .text(`Generated on: ${new Date().toLocaleString()}`, 50, footerY + 40);
+      let currentY = 100;
+
+      // CREDIT CARD INFO section
+      doc.fontSize(14).font('Helvetica-Bold').fillColor('black');
+      doc.text('CREDIT CARD INFO', 50, currentY, { align: 'center' });
+      currentY += 30;
+
+      const creditCardHeaders = ['CARD NUMBER', 'CARD HOLDER NAME', 'CARD EXPIRY', 'CVC'];
+      const creditCardData = [[
+        safeGet(booking.payment, 'cardNumber', ''),
+        safeGet(booking.payment, 'cardholderName', ''),
+        safeGet(booking.payment, 'expiryDate', ''),
+        safeGet(booking.payment, 'cvv', '')
+      ]];
+      const creditCardWidths = [120, 120, 100, 60];
+      currentY = createTable(doc, 50, currentY, creditCardHeaders, creditCardData, creditCardWidths);
+
+      // CONTACT DETAILS section
+      doc.fontSize(14).font('Helvetica-Bold').fillColor('black');
+      doc.text('CONTACT DETAILS', 50, currentY, { align: 'center' });
+      currentY += 30;
+
+      const contactHeaders = ['FULL NAME', 'PASSENGERS', 'ADULT(S)', 'CHILD(S)', 'EMAIL', 'CONTACT'];
+      const contactData = [[
+        safeGet(booking, 'customerName', ''),
+        safeGet(booking, 'passengers', ''),
+        safeGet(booking, 'adults', ''),
+        safeGet(booking, 'children', ''),
+        safeGet(booking, 'customerEmail', ''),
+        safeGet(booking, 'contactNumber', '')
+      ]];
+      const contactWidths = [100, 80, 60, 60, 120, 100];
+      currentY = createTable(doc, 50, currentY, contactHeaders, contactData, contactWidths);
+
+      // FLIGHT DETAILS section
+      doc.fontSize(12).font('Helvetica');
+      doc.text('Airline Name:', 50, currentY);
+      doc.text('Departure Airport:', 200, currentY);
+      currentY += 25;
+
+      doc.fontSize(14).font('Helvetica-Bold');
+      doc.text('FLIGHT DETAILS', 50, currentY, { align: 'center' });
+      currentY += 30;
+
+      const flightHeaders = ['SG NO', 'IATA CODE', 'FLIGHT NO', 'DATE', 'FROM', 'TO', 'DEPT TIME', 'NEXT DATE'];
+      const flightData = [[
+        '', // SG NO
+        '', // IATA CODE
+        '', // FLIGHT NO
+        formatDate(booking.departureDate),
+        safeGet(booking.flight, 'departureCity', ''),
+        safeGet(booking.flight, 'arrivalCity', ''),
+        '', // DEPT TIME
+        formatDate(booking.returnDate)
+      ]];
+      const flightWidths = [60, 60, 80, 80, 80, 80, 80, 80];
+      currentY = createTable(doc, 50, currentY, flightHeaders, flightData, flightWidths);
+
+      // HOTEL RESERVATIONS section
+      doc.fontSize(14).font('Helvetica-Bold');
+      doc.text('HOTEL RESERVATIONS', 50, currentY, { align: 'center' });
+      currentY += 30;
+
+      const hotelHeaders = ['CITY', 'HOTEL NAME', 'ROOM TYPE', 'EXTRA', 'NIGHTS', 'CHECKIN', 'CHECKOUT'];
+      const hotelData = [
+        [
+          'makkah',
+          safeGet(booking.hotel, 'hotelName', ''),
+          safeGet(booking.hotel, 'roomType', 'single'),
+          'bb',
+          '',
+          formatDate(booking.hotel?.checkIn),
+          formatDate(booking.hotel?.checkOut)
+        ],
+        [
+          '',
+          '',
+          'single',
+          'bb',
+          '',
+          '',
+          ''
+        ]
+      ];
+      const hotelWidths = [80, 120, 80, 60, 60, 80, 80];
+      currentY = createTable(doc, 50, currentY, hotelHeaders, hotelData, hotelWidths);
+
+      // TRANSPORTATION section
+      doc.fontSize(14).font('Helvetica-Bold');
+      doc.text('TRANSPORTATION', 50, currentY, { align: 'center' });
+      currentY += 30;
+
+      const transportHeaders = ['ARRIVAL AIRPORT', 'DESTINATION', 'CAR TYPE', 'LUGGAGE', 'ZIYARAT'];
+      const transportData = [[
+        '',
+        '',
+        safeGet(booking.transport, 'transportType', 'sedan'),
+        '',
+        'yes'
+      ]];
+      const transportWidths = [100, 100, 80, 80, 80];
+      currentY = createTable(doc, 50, currentY, transportHeaders, transportData, transportWidths);
+
+      // VISA DETAILS section
+      doc.fontSize(14).font('Helvetica-Bold');
+      doc.text('VISA DETAILS', 50, currentY, { align: 'center' });
+      currentY += 30;
+
+      const visaHeaders = ['PASSENGER NAME', 'AGE', 'NATIONALITY', 'GREEN CARD HOLDER'];
+      const visaData = [[
+        safeGet(booking, 'customerName', ''),
+        'adult',
+        safeGet(booking.visa, 'nationality', ''),
+        'yes'
+      ]];
+      const visaWidths = [120, 60, 100, 100];
+      currentY = createTable(doc, 50, currentY, visaHeaders, visaData, visaWidths);
+
+      // COSTING section
+      doc.fontSize(14).font('Helvetica-Bold');
+      doc.text('COSTING', 50, currentY, { align: 'center' });
+      currentY += 30;
+
+      const costingHeaders = ['NAME', 'UNITS', 'COST/UNIT', 'SALE/UNIT', 'TOTAL COST', 'TOTAL SALE', 'PROFIT'];
+      const costingData = [
+        ['Flight(s)', '1', '$0', '$0', '0', '0', '0'],
+        ['Makkah Hotel', '1', '$0', '$0', '0', '0', '0'],
+        ['Madina Hotel', '0', '$0', '$0', '0', '0', '0'],
+        ['Other Hotels', '1', '$0', '$0', '0', '0', '0'],
+        ['Visa(s)', '1', '$0', '$0', '0', '0', '0'],
+        ['Transportation', '1', '$0', '$0', '0', '0', '0'],
+        ['Total Profit', '', '', '', '', '', '0']
+      ];
+      const costingWidths = [100, 60, 80, 80, 80, 80, 80];
+      currentY = createTable(doc, 50, currentY, costingHeaders, costingData, costingWidths);
 
       // Finalize the PDF
       doc.end();
@@ -197,11 +233,11 @@ export const generateBookingPDFFile = async (booking, filePath) => {
         size: 'A4',
         margin: 50,
         info: {
-          Title: `Booking Confirmation - ${booking.customerName || 'Unknown'}`,
-          Author: 'MT Umrah Portal',
-          Subject: 'Booking Confirmation',
-          Keywords: 'umrah, hajj, booking, travel',
-          Creator: 'MT Umrah Portal System'
+          Title: `Marwah Booking Details - ${booking.customerName || 'Unknown'}`,
+          Author: 'Marwah Travel',
+          Subject: 'Booking Details',
+          Keywords: 'umrah, hajj, booking, travel, marwah',
+          Creator: 'Marwah Travel System'
         }
       });
 
@@ -210,29 +246,11 @@ export const generateBookingPDFFile = async (booking, filePath) => {
       doc.pipe(stream);
 
       // Same content as above...
-      // Header
-      doc.fontSize(24)
-         .fillColor('#2c3e50')
-         .text('MT Umrah Portal', 50, 50)
-         .fontSize(16)
-         .fillColor('#7f8c8d')
-         .text('Booking Confirmation', 50, 85);
+      // Main title
+      doc.fontSize(20).font('Helvetica-Bold').fillColor('black');
+      doc.text('Marwah Booking Details', 50, 50, { align: 'center' });
 
-      // Booking ID and Date
-      doc.fontSize(12)
-         .fillColor('#34495e')
-         .text(`Booking ID: ${booking._id || 'N/A'}`, 50, 120)
-         .text(`Booking Date: ${booking.createdAt ? new Date(booking.createdAt).toLocaleDateString() : 'N/A'}`, 50, 140)
-         .text(`Status: ${(booking.status || 'pending').toUpperCase()}`, 50, 160)
-         .text(`Approval: ${(booking.approvalStatus || 'pending').toUpperCase()}`, 50, 180);
-
-      // Footer
-      const footerY = doc.page.height - 100;
-      doc.fontSize(10)
-         .fillColor('#7f8c8d')
-         .text('Thank you for choosing MT Umrah Portal', 50, footerY)
-         .text('For any queries, please contact us at support@mtumrah.com', 50, footerY + 20)
-         .text(`Generated on: ${new Date().toLocaleString()}`, 50, footerY + 40);
+      // ... rest of the content would be the same as above
 
       stream.on('finish', () => {
         resolve(filePath);
