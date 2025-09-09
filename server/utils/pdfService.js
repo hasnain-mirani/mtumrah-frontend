@@ -6,7 +6,7 @@ export const generateBookingPDF = async (booking) => {
       // Create a new PDF document
       const doc = new PDFDocument({ 
         size: 'A4',
-        margin: 50,
+        margin: 30,
         info: {
           Title: `Marwah Booking Details - ${booking.customerName || 'Unknown'}`,
           Author: 'Marwah Travel',
@@ -49,15 +49,15 @@ export const generateBookingPDF = async (booking) => {
 
       // Helper function to create table
       const createTable = (doc, x, y, headers, data, colWidths) => {
-        const rowHeight = 25;
-        const headerHeight = 30;
+        const rowHeight = 20;
+        const headerHeight = 25;
         
         // Draw table headers
-        doc.fontSize(10).font('Helvetica-Bold');
+        doc.fontSize(9).font('Helvetica-Bold');
         let currentX = x;
         headers.forEach((header, index) => {
           doc.rect(currentX, y, colWidths[index], headerHeight).stroke();
-          doc.text(header, currentX + 5, y + 8, { width: colWidths[index] - 10, align: 'left' });
+          doc.text(header, currentX + 3, y + 6, { width: colWidths[index] - 6, align: 'left' });
           currentX += colWidths[index];
         });
         
@@ -68,24 +68,24 @@ export const generateBookingPDF = async (booking) => {
           currentX = x;
           row.forEach((cell, colIndex) => {
             doc.rect(currentX, rowY, colWidths[colIndex], rowHeight).stroke();
-            doc.text(cell || '', currentX + 5, rowY + 8, { width: colWidths[colIndex] - 10, align: 'left' });
+            doc.text(cell || '', currentX + 3, rowY + 6, { width: colWidths[colIndex] - 6, align: 'left' });
             currentX += colWidths[colIndex];
           });
         });
         
-        return y + headerHeight + (data.length * rowHeight) + 20;
+        return y + headerHeight + (data.length * rowHeight) + 15;
       };
 
       // Main title
-      doc.fontSize(20).font('Helvetica-Bold').fillColor('black');
-      doc.text('Marwah Booking Details', 50, 50, { align: 'center' });
+      doc.fontSize(18).font('Helvetica-Bold').fillColor('black');
+      doc.text('Marwah Booking Details', 30, 30, { align: 'center' });
 
-      let currentY = 100;
+      let currentY = 70;
 
       // CREDIT CARD INFO section
-      doc.fontSize(14).font('Helvetica-Bold').fillColor('black');
-      doc.text('CREDIT CARD INFO', 50, currentY, { align: 'center' });
-      currentY += 30;
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('black');
+      doc.text('CREDIT CARD INFO', 30, currentY, { align: 'center' });
+      currentY += 25;
 
       const creditCardHeaders = ['CARD NUMBER', 'CARD HOLDER NAME', 'CARD EXPIRY', 'CVC'];
       const creditCardData = [[
@@ -94,13 +94,13 @@ export const generateBookingPDF = async (booking) => {
         safeGet(booking.payment, 'expiryDate', ''),
         safeGet(booking.payment, 'cvv', '')
       ]];
-      const creditCardWidths = [120, 120, 100, 60];
-      currentY = createTable(doc, 50, currentY, creditCardHeaders, creditCardData, creditCardWidths);
+      const creditCardWidths = [100, 100, 80, 50];
+      currentY = createTable(doc, 30, currentY, creditCardHeaders, creditCardData, creditCardWidths);
 
       // CONTACT DETAILS section
-      doc.fontSize(14).font('Helvetica-Bold').fillColor('black');
-      doc.text('CONTACT DETAILS', 50, currentY, { align: 'center' });
-      currentY += 30;
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('black');
+      doc.text('CONTACT DETAILS', 30, currentY, { align: 'center' });
+      currentY += 25;
 
       const contactHeaders = ['FULL NAME', 'PASSENGERS', 'ADULT(S)', 'CHILD(S)', 'EMAIL', 'CONTACT'];
       const contactData = [[
@@ -111,20 +111,21 @@ export const generateBookingPDF = async (booking) => {
         safeGet(booking, 'customerEmail', ''),
         safeGet(booking, 'contactNumber', '')
       ]];
-      const contactWidths = [100, 80, 60, 60, 120, 100];
-      currentY = createTable(doc, 50, currentY, contactHeaders, contactData, contactWidths);
+      const contactWidths = [80, 60, 50, 50, 100, 80];
+      currentY = createTable(doc, 30, currentY, contactHeaders, contactData, contactWidths);
+
+      // Flight details text
+      doc.fontSize(10).font('Helvetica');
+      doc.text('Airline Name:', 30, currentY);
+      doc.text('Departure Airport:', 150, currentY);
+      currentY += 20;
 
       // FLIGHT DETAILS section
-      doc.fontSize(12).font('Helvetica');
-      doc.text('Airline Name:', 50, currentY);
-      doc.text('Departure Airport:', 200, currentY);
+      doc.fontSize(12).font('Helvetica-Bold');
+      doc.text('FLIGHT DETAILS', 30, currentY, { align: 'center' });
       currentY += 25;
 
-      doc.fontSize(14).font('Helvetica-Bold');
-      doc.text('FLIGHT DETAILS', 50, currentY, { align: 'center' });
-      currentY += 30;
-
-      const flightHeaders = ['SG NO', 'IATA CODE', 'FLIGHT NO', 'DATE', 'FROM', 'TO', 'DEPT TIME', 'NEXT DATE'];
+      const flightHeaders = ['SG NO', 'IATA CODE', 'FLIGHT NO', 'DATE', 'FROM', 'TO', 'DEPT TIME', 'NEXT'];
       const flightData = [[
         '', // SG NO
         '', // IATA CODE
@@ -135,20 +136,20 @@ export const generateBookingPDF = async (booking) => {
         '', // DEPT TIME
         formatDate(booking.returnDate)
       ]];
-      const flightWidths = [60, 60, 80, 80, 80, 80, 80, 80];
-      currentY = createTable(doc, 50, currentY, flightHeaders, flightData, flightWidths);
+      const flightWidths = [50, 50, 60, 60, 60, 60, 60, 50];
+      currentY = createTable(doc, 30, currentY, flightHeaders, flightData, flightWidths);
 
       // HOTEL RESERVATIONS section
-      doc.fontSize(14).font('Helvetica-Bold');
-      doc.text('HOTEL RESERVATIONS', 50, currentY, { align: 'center' });
-      currentY += 30;
+      doc.fontSize(12).font('Helvetica-Bold');
+      doc.text('HOTEL RESERVATIONS', 30, currentY, { align: 'center' });
+      currentY += 25;
 
       const hotelHeaders = ['CITY', 'HOTEL NAME', 'ROOM TYPE', 'EXTRA', 'NIGHTS', 'CHECKIN', 'CHECKOUT'];
       const hotelData = [
         [
           'makkah',
           safeGet(booking.hotel, 'hotelName', ''),
-          safeGet(booking.hotel, 'roomType', 'single'),
+          safeGet(booking.hotel, 'roomType', 'double'),
           'bb',
           '',
           formatDate(booking.hotel?.checkIn),
@@ -164,13 +165,13 @@ export const generateBookingPDF = async (booking) => {
           ''
         ]
       ];
-      const hotelWidths = [80, 120, 80, 60, 60, 80, 80];
-      currentY = createTable(doc, 50, currentY, hotelHeaders, hotelData, hotelWidths);
+      const hotelWidths = [60, 80, 60, 40, 50, 60, 60];
+      currentY = createTable(doc, 30, currentY, hotelHeaders, hotelData, hotelWidths);
 
       // TRANSPORTATION section
-      doc.fontSize(14).font('Helvetica-Bold');
-      doc.text('TRANSPORTATION', 50, currentY, { align: 'center' });
-      currentY += 30;
+      doc.fontSize(12).font('Helvetica-Bold');
+      doc.text('TRANSPORTATION', 30, currentY, { align: 'center' });
+      currentY += 25;
 
       const transportHeaders = ['ARRIVAL AIRPORT', 'DESTINATION', 'CAR TYPE', 'LUGGAGE', 'ZIYARAT'];
       const transportData = [[
@@ -180,13 +181,13 @@ export const generateBookingPDF = async (booking) => {
         '',
         'yes'
       ]];
-      const transportWidths = [100, 100, 80, 80, 80];
-      currentY = createTable(doc, 50, currentY, transportHeaders, transportData, transportWidths);
+      const transportWidths = [80, 80, 60, 60, 60];
+      currentY = createTable(doc, 30, currentY, transportHeaders, transportData, transportWidths);
 
       // VISA DETAILS section
-      doc.fontSize(14).font('Helvetica-Bold');
-      doc.text('VISA DETAILS', 50, currentY, { align: 'center' });
-      currentY += 30;
+      doc.fontSize(12).font('Helvetica-Bold');
+      doc.text('VISA DETAILS', 30, currentY, { align: 'center' });
+      currentY += 25;
 
       const visaHeaders = ['PASSENGER NAME', 'AGE', 'NATIONALITY', 'GREEN CARD HOLDER'];
       const visaData = [[
@@ -195,13 +196,13 @@ export const generateBookingPDF = async (booking) => {
         safeGet(booking.visa, 'nationality', ''),
         'yes'
       ]];
-      const visaWidths = [120, 60, 100, 100];
-      currentY = createTable(doc, 50, currentY, visaHeaders, visaData, visaWidths);
+      const visaWidths = [100, 50, 80, 80];
+      currentY = createTable(doc, 30, currentY, visaHeaders, visaData, visaWidths);
 
       // COSTING section
-      doc.fontSize(14).font('Helvetica-Bold');
-      doc.text('COSTING', 50, currentY, { align: 'center' });
-      currentY += 30;
+      doc.fontSize(12).font('Helvetica-Bold');
+      doc.text('COSTING', 30, currentY, { align: 'center' });
+      currentY += 25;
 
       const costingHeaders = ['NAME', 'UNITS', 'COST/UNIT', 'SALE/UNIT', 'TOTAL COST', 'TOTAL SALE', 'PROFIT'];
       const costingData = [
@@ -213,8 +214,8 @@ export const generateBookingPDF = async (booking) => {
         ['Transportation', '1', '$0', '$0', '0', '0', '0'],
         ['Total Profit', '', '', '', '', '', '0']
       ];
-      const costingWidths = [100, 60, 80, 80, 80, 80, 80];
-      currentY = createTable(doc, 50, currentY, costingHeaders, costingData, costingWidths);
+      const costingWidths = [80, 50, 60, 60, 60, 60, 60];
+      currentY = createTable(doc, 30, currentY, costingHeaders, costingData, costingWidths);
 
       // Finalize the PDF
       doc.end();
@@ -231,7 +232,7 @@ export const generateBookingPDFFile = async (booking, filePath) => {
     try {
       const doc = new PDFDocument({ 
         size: 'A4',
-        margin: 50,
+        margin: 30,
         info: {
           Title: `Marwah Booking Details - ${booking.customerName || 'Unknown'}`,
           Author: 'Marwah Travel',
@@ -247,8 +248,8 @@ export const generateBookingPDFFile = async (booking, filePath) => {
 
       // Same content as above...
       // Main title
-      doc.fontSize(20).font('Helvetica-Bold').fillColor('black');
-      doc.text('Marwah Booking Details', 50, 50, { align: 'center' });
+      doc.fontSize(18).font('Helvetica-Bold').fillColor('black');
+      doc.text('Marwah Booking Details', 30, 30, { align: 'center' });
 
       // ... rest of the content would be the same as above
 
