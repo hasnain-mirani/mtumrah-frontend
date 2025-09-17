@@ -13,6 +13,37 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// --- helpers ---
+const normalizeId = (val: any): string | null => {
+  if (!val) return null;
+  let s = typeof val === "string" ? val : String(val);
+  s = s.trim();
+  const m = s.match(/^ObjectId\(["']?([0-9a-fA-F]{24})["']?\)$/);
+  if (m) s = m[1];
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  return /^[0-9a-fA-F]{24}$/.test(s) ? s : null;
+};
+
+const extractCompanyId = (payload: any): string | null => {
+  const c =
+    payload?.agent?.company ??
+    payload?.user?.company ??
+    payload?.company ??
+    payload?.companyId ??
+    null;
+  if (!c) return null;
+  if (typeof c === "object" && c?._id) return normalizeId(c._id);
+  return normalizeId(c);
+};
+
+const saveCompanyIdIfAny = (payload: any) => {
+  const cid = extractCompanyId(payload);
+  if (cid) localStorage.setItem("companyId", cid);
+  return !!cid;
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,29 +56,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (storedUser) setUser(JSON.parse(storedUser));
 
         const token = localStorage.getItem("token");
-        if (token) {
-          // Try admin endpoint first, then agent endpoint
-          let res;
+        if (!token) return;
+
+        // Try admin /auth/me first, then /agent/me
+        let res;
+        try {
+          res = await http.get("/api/auth/me");
+        } catch {
           try {
-            res = await http.get("/api/auth/me");
-          } catch (adminError) {
-            try {
-              res = await http.get("/api/agent/me");
-            } catch (agentError) {
-              console.error("Both admin and agent session restoration failed:", { adminError, agentError });
-              throw new Error("Session restoration failed");
-            }
-          }
-          
-          if (res?.data) {
-            setUser(res.data);
-            localStorage.setItem("user", JSON.stringify(res.data));
+            res = await http.get("/api/agent/me");
+          } catch {
+            throw new Error("Session restoration failed");
           }
         }
+
+        if (res?.data) {
+          // ensure companyId is saved for subsequent requests
+          if (!localStorage.getItem("companyId")) {
+            saveCompanyIdIfAny(res.data);
+          }
+          setUser(res.data);
+          localStorage.setItem("user", JSON.stringify(res.data));
+        }
       } catch {
-        // token invalid -> clear
         localStorage.removeItem("token");
         localStorage.removeItem("user");
+        localStorage.removeItem("companyId");
         setUser(null);
       } finally {
         setIsLoading(false);
@@ -58,12 +92,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      // Try admin login first
+      // Try admin login first, then agent login
       let res;
       try {
         res = await http.post("/api/auth/login", { email, password });
       } catch (adminError) {
-        // If admin login fails, try agent login
         try {
           res = await http.post("/api/agent/login", { email, password });
         } catch (agentError) {
@@ -72,23 +105,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // backend should return: { token, user } or { token, _id, name, email, role }
-      const { token, user, _id, name, email: userEmail, role } = res.data || {};
-      
+      const { token } = res.data || {};
       if (!token) return false;
 
-      // Normalize user object for both admin and agent responses
-      const normalizedUser = user || {
-        id: _id,
-        name,
-        email: userEmail,
-        role,
-        agentId: _id // Add agentId for agents
-      };
+      // Normalize user (works for both shapes)
+      const u =
+        res.data.user ??
+        {
+          id: res.data._id,
+          name: res.data.name,
+          email: res.data.email,
+          role: res.data.role,
+          agentId: res.data._id, // for agents
+        };
 
+      // Persist auth
       localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(normalizedUser));
-      setUser(normalizedUser);
+      localStorage.setItem("user", JSON.stringify(u));
+      setUser(u);
+
+      // Save companyId from login payload if present
+      const hadCompany = saveCompanyIdIfAny(res.data);
+
+      // Fallback: fetch /me to get companyId if missing
+      if (!hadCompany) {
+        try {
+          let me;
+          try {
+            me = await http.get("/api/auth/me");
+          } catch {
+            me = await http.get("/api/agent/me");
+          }
+          saveCompanyIdIfAny(me.data);
+        } catch {
+          // ignore; some routes may still work if DEFAULT_COMPANY_ID is set on backend
+        }
+      }
+
       return true;
     } catch (err) {
       console.error("Login failed:", err);
@@ -102,6 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
+      localStorage.removeItem("companyId");
       setUser(null);
     }
   };

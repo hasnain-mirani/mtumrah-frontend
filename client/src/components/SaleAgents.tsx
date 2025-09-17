@@ -13,7 +13,7 @@ import {
   Award,
   TrendingUp,
 } from 'lucide-react';
-import { http } from '../lib/http'; // Axios instance that injects Authorization header
+import { http } from '../lib/http';
 
 type UiRecentBooking = { id: string; customer: string; amount: number };
 type UiAgent = {
@@ -30,31 +30,33 @@ type UiAgent = {
   recentBookings: UiRecentBooking[];
 };
 
-// Map whatever your backend returns → UI-safe structure
-function mapAgent(a: any): UiAgent {
-  const id = a?._id || a?.id;
+const toId = (v: any): string =>
+  (v && typeof v === 'object' && (v._id || v.id)) || (typeof v === 'string' ? v : '') || '';
+
+/** Map raw agent → UI agent (performance injected later) */
+function baseMapAgent(a: any): UiAgent {
+  const id = toId(a) || crypto.randomUUID();
   const name =
     a?.name ||
     [a?.firstName, a?.lastName].filter(Boolean).join(' ') ||
     'Unnamed Agent';
 
   return {
-    id: id || crypto.randomUUID(),
+    id,
     name,
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     avatar: a?.avatar ?? null,
-    // Use real performance data from backend
     totalBookings: Number(a?.totalBookings ?? 0) || 0,
     totalRevenue: Number(a?.totalRevenue ?? 0) || 0,
     monthlyTarget: Number(a?.monthlyTarget ?? 5000) || 5000,
     joinDate: a?.joinDate || a?.createdAt || '',
-    status: a?.isActive ? 'active' : 'inactive',
+    status: a?.isActive === false ? 'inactive' : 'active',
     recentBookings: Array.isArray(a?.recentBookings)
       ? a.recentBookings.map((b: any) => ({
-          id: b?.id || b?._id || '',
+          id: toId(b),
           customer: b?.customer || b?.customerName || '—',
-          amount: Number(b?.amount) || 0,
+          amount: Number(b?.amount ?? b?.totalAmount ?? 0) || 0,
         }))
       : [],
   };
@@ -64,32 +66,72 @@ const SaleAgents: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<UiAgent | null>(null);
-  
-  // Use DataContext instead of local state
-  const { agents: contextAgents, fetchAgents, addAgent, updateAgent, deleteAgent: deleteAgentFromContext } = useData();
+
+  const {
+    agents: contextAgents,
+    fetchAgents,
+  } = useData();
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
-  // Map context agents to UI format
-  const agents = useMemo(() => {
-    return contextAgents.map(mapAgent);
-  }, [contextAgents]);
+  // Performance map: agentId -> { bookings, revenue }
+  const [perf, setPerf] = useState<Record<string, { bookings: number; revenue: number }>>({});
 
-  // Force refresh agents on mount
+  // Load agents from API (via context) + load performance
   useEffect(() => {
-    fetchAgents();
+    (async () => {
+      setLoading(true);
+      setErr('');
+      try {
+        await fetchAgents();
+        // then fetch performance (admin-only route)
+        try {
+          const { data } = await http.get('/api/agent/performance');
+          // expecting { ok: true, data: [{ _id: agentId, bookings, revenue }, ...] }
+          const p: Record<string, { bookings: number; revenue: number }> = {};
+          const rows = data?.data ?? data ?? [];
+          for (const r of rows) {
+            const id = toId(r?._id);
+            if (!id) continue;
+            p[id] = {
+              bookings: Number(r?.bookings ?? 0) || 0,
+              revenue: Number(r?.revenue ?? 0) || 0,
+            };
+          }
+          setPerf(p);
+        } catch (e: any) {
+          // If 400/403, silently ignore (non-admin or no company header)
+          // console.warn('performance fetch skipped:', e?.response?.status);
+        }
+      } catch (e: any) {
+        setErr(e?.response?.data?.message || e?.message || 'Failed to fetch agents');
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Create agent (from modal) ----
+  // Merge performance into mapped agents
+  const agents = useMemo<UiAgent[]>(() => {
+    const list = (contextAgents || []).map(baseMapAgent);
+    return list.map(a => {
+      const p = perf[a.id];
+      return p
+        ? { ...a, totalBookings: p.bookings, totalRevenue: p.revenue }
+        : a;
+    });
+  }, [contextAgents, perf]);
+
+  // ---- Create agent ----
   const handleCreateAgent = async (agentData: any) => {
-    // AgentModal is expected to send: firstName, lastName, email, password, phone, monthlyTarget
     const payload = {
-      // send both name and first/last for compatibility
       name: [agentData.firstName, agentData.lastName].filter(Boolean).join(' '),
       firstName: agentData.firstName,
       lastName: agentData.lastName,
       email: agentData.email,
-      password: agentData.password, // Required for agent creation
+      password: agentData.password, // required for creation
       phone: agentData.phone,
       monthlyTarget: Number(agentData.monthlyTarget) || 5000,
       commissionRate: Number(agentData.commissionRate) || 5.0,
@@ -98,20 +140,36 @@ const SaleAgents: React.FC = () => {
     };
 
     try {
-      // Use the correct register endpoint
-      const { data } = await http.post('/api/agent/register', payload);
-      const created = mapAgent(data?.agent ?? data);
-      
-      // Refresh agents from API to get updated data
+      await http.post('/api/agent/register', payload);
       await fetchAgents();
-      
+      // update performance too
+      try {
+        const { data } = await http.get('/api/agent/performance');
+        const p: Record<string, { bookings: number; revenue: number }> = {};
+        for (const r of data?.data ?? []) {
+          const id = toId(r?._id);
+          if (!id) continue;
+          p[id] = { bookings: Number(r?.bookings ?? 0) || 0, revenue: Number(r?.revenue ?? 0) || 0 };
+        }
+        setPerf(p);
+      } catch {}
       setIsAgentModalOpen(false);
     } catch (e: any) {
-      alert(
-        e?.response?.data?.message ||
-          e?.message ||
-          'Failed to create agent'
-      );
+      if (e?.response?.status === 409) {
+        const yes = confirm('Agent already exists. Update their profile & password instead?');
+        if (yes) {
+          try {
+            await http.post('/api/agent/register?upsert=true', payload);
+            await fetchAgents();
+            setIsAgentModalOpen(false);
+            return;
+          } catch (ee: any) {
+            alert(ee?.response?.data?.message || ee?.message || 'Failed to upsert agent');
+            return;
+          }
+        }
+      }
+      alert(e?.response?.data?.message || e?.message || 'Failed to create agent');
     }
   };
 
@@ -120,14 +178,9 @@ const SaleAgents: React.FC = () => {
     if (!confirm('Delete this agent?')) return;
     try {
       await http.delete(`/api/agent/${id}`);
-      // Refresh agents from API to get updated data
       await fetchAgents();
     } catch (e: any) {
-      alert(
-        e?.response?.data?.message ||
-          e?.message ||
-          'Failed to delete agent'
-      );
+      alert(e?.response?.data?.message || e?.message || 'Failed to delete agent');
     }
   };
 
@@ -143,26 +196,15 @@ const SaleAgents: React.FC = () => {
       commissionRate: Number(agentData.commissionRate) || 5.0,
       department: agentData.department || 'sales',
     };
-
-    // Only include password if it was changed
-    if (agentData.password && agentData.password.trim()) {
-      payload.password = agentData.password;
-    }
+    if (agentData.password?.trim()) payload.password = agentData.password;
 
     try {
-      const { data } = await http.put(`/api/agent/${editingAgent.id}`, payload);
-      
-      // Refresh agents from API to get updated data
+      await http.put(`/api/agent/${editingAgent.id}`, payload);
       await fetchAgents();
-      
       setIsAgentModalOpen(false);
       setEditingAgent(null);
     } catch (e: any) {
-      alert(
-        e?.response?.data?.message ||
-          e?.message ||
-          'Failed to update agent'
-      );
+      alert(e?.response?.data?.message || e?.message || 'Failed to update agent');
     }
   };
 
@@ -181,7 +223,6 @@ const SaleAgents: React.FC = () => {
     [agents, searchTerm]
   );
 
-  // Overview stats derived from list
   const overview = useMemo(() => {
     const totalRevenue = agents.reduce((s, a) => s + a.totalRevenue, 0);
     const totalBookings = agents.reduce((s, a) => s + a.totalBookings, 0);
@@ -344,7 +385,10 @@ const SaleAgents: React.FC = () => {
                   <button
                     title="Edit agent"
                     className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                    onClick={() => openEditModal(agent)}
+                    onClick={() => {
+                      setEditingAgent(agent);
+                      setIsAgentModalOpen(true);
+                    }}
                   >
                     <Edit className="h-4 w-4" />
                   </button>

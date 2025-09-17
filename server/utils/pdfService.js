@@ -1,18 +1,22 @@
 import PDFDocument from 'pdfkit';
 
-export const generateBookingPDF = async (booking) => {
+export const generateBookingPDF = async (booking, company) => {
   return new Promise((resolve, reject) => {
     try {
+      // Get company information or use defaults
+      const companyName = company?.name || 'Marwah Travels';
+      const companyColor = company?.primaryColor || '#3B82F6';
+      
       // Create a new PDF document
       const doc = new PDFDocument({ 
         size: 'A4',
         margin: 30,
         info: {
-          Title: `Marwah Booking Details - ${booking.customerName || 'Unknown'}`,
-          Author: 'Marwah Travel',
+          Title: `${companyName} Booking Details - ${booking.customerName || 'Unknown'}`,
+          Author: companyName,
           Subject: 'Booking Details',
-          Keywords: 'umrah, hajj, booking, travel, marwah',
-          Creator: 'Marwah Travel System'
+          Keywords: 'umrah, hajj, booking, travel',
+          Creator: `${companyName} System`
         }
       });
 
@@ -77,8 +81,8 @@ export const generateBookingPDF = async (booking) => {
       };
 
       // Main title
-      doc.fontSize(18).font('Helvetica-Bold').fillColor('black');
-      doc.text('Marwah Booking Details', 30, 30, { align: 'center' });
+      doc.fontSize(18).font('Helvetica-Bold').fillColor(companyColor);
+      doc.text(`${companyName} Booking Details`, 30, 30, { align: 'center' });
 
       let currentY = 70;
 
@@ -248,8 +252,8 @@ export const generateBookingPDFFile = async (booking, filePath) => {
 
       // Same content as above...
       // Main title
-      doc.fontSize(18).font('Helvetica-Bold').fillColor('black');
-      doc.text('Marwah Booking Details', 30, 30, { align: 'center' });
+      doc.fontSize(18).font('Helvetica-Bold').fillColor(companyColor);
+      doc.text(`${companyName} Booking Details`, 30, 30, { align: 'center' });
 
       // ... rest of the content would be the same as above
 

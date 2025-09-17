@@ -1,42 +1,50 @@
 import Agent from "../models/Agent.js";
 import Booking from "../models/Booking.js";
+import { getCompanyModels } from "../utils/dbManager.js";
 import generateToken from "../utils/generateToken.js";
 
 // Register Agent
 export const registerAgent = async (req, res) => {
-  const { 
-    name, 
-    email, 
-    password, 
-    phone, 
-    monthlyTarget, 
-    commissionRate, 
-    department 
-  } = req.body;
+  try {
+    // Get company-specific models
+    const { Agent: CompanyAgent } = await getCompanyModels(req.user.company._id);
+    
+    const { 
+      name, 
+      email, 
+      password, 
+      phone, 
+      monthlyTarget, 
+      commissionRate, 
+      department 
+    } = req.body;
 
-  const agentExists = await Agent.findOne({ email });
-  if (agentExists) return res.status(400).json({ message: "Agent already exists" });
+    const agentExists = await CompanyAgent.findOne({ email });
+    if (agentExists) return res.status(400).json({ message: "Agent already exists" });
 
-  const agent = await Agent.create({ 
-    name, 
-    email, 
-    passwordHash: password, 
-    phone,
-    monthlyTarget: monthlyTarget || 5000,
-    commissionRate: commissionRate || 5.0,
-    department: department || 'sales'
-  });
-
-  if (agent) {
-    res.status(201).json({
-      _id: agent._id,
-      name: agent.name,
-      email: agent.email,
-      role: agent.role,
-      token: generateToken(agent._id, agent.role),
+    const agent = await CompanyAgent.create({ 
+      name, 
+      email, 
+      passwordHash: password, 
+      phone,
+      monthlyTarget: monthlyTarget || 5000,
+      commissionRate: commissionRate || 5.0,
+      department: department || 'sales'
     });
-  } else {
-    res.status(400).json({ message: "Invalid agent data" });
+
+    if (agent) {
+      res.status(201).json({
+        _id: agent._id,
+        name: agent.name,
+        email: agent.email,
+        role: agent.role,
+        token: generateToken(agent._id, agent.role),
+      });
+    } else {
+      res.status(400).json({ message: "Invalid agent data" });
+    }
+  } catch (error) {
+    res.status(400).json({ message: error.message });
   }
 };
 
@@ -61,8 +69,15 @@ export const loginAgent = async (req, res) => {
 
 // Get All Agents (Admin only)
 export const getAgents = async (req, res) => {
-  const agents = await Agent.find({});
-  res.json(agents);
+  try {
+    // Get company-specific models
+    const { Agent: CompanyAgent } = await getCompanyModels(req.user.company._id);
+    
+    const agents = await CompanyAgent.find({});
+    res.json(agents);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 // Get Single Agent
@@ -236,7 +251,10 @@ export const getAgentPerformance = async (req, res) => {
 // Get all agents with performance data
 export const getAgentsWithPerformance = async (req, res) => {
   try {
-    const agents = await Agent.find({});
+    // Get company-specific models
+    const { Agent: CompanyAgent } = await getCompanyModels(req.user.company._id);
+    
+    const agents = await CompanyAgent.find({});
     const agentsWithPerformance = await Promise.all(
       agents.map(async (agent) => {
         const performance = await calculateAgentPerformance(agent._id);

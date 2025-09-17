@@ -1,8 +1,11 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-
+// import { protect, admin } from "./middleware/authMiddleware.js";
+import { ensureCompany } from "./middleware/companyContext.js";
 // Load environment variables
+import bookingRoutes from "./routes/bookings.js";
+// import inquiriesRoutes from "./routes/inquiries.js";
 dotenv.config();
 import morgan from "morgan";
 import colors from "colors";
@@ -11,13 +14,18 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
 import authRoutes from "./routes/authRoutes.js";
-import bookingRoutes from "./routes/bookingRoutes.js";
+
 import inquiryRoutes from "./routes/inquiryRoutes.js"
 import agentRoutes from "./routes/agentRoutes.js"
 import analyticsRoutes from "./routes/analyticsRoutes.js";
+import companyRoutes from "./routes/companyRoutes.js";
 // import pdfRoutes from "./routes/pdfRoutes.js";
 import User from "./models/User.js";
 import bcrypt from "bcryptjs";
+import { ensureCompany } from "./middleware/companyContext.js";
+
+// ...
+
 
 dotenv.config();
 
@@ -73,7 +81,17 @@ app.options('*', (req, res) => {
 // Add CORS headers to all responses
 app.use((req, res, next) => {
   console.log('🌐 Request from origin:', req.headers.origin);
-  res.header('Access-Control-Allow-Origin', 'https://mtumrah-portal.vercel.app');
+  // Allow localhost for development
+  const allowedOrigins = [
+    'https://mtumrah-portal.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:5174'
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Credentials', 'true');
   next();
 });
@@ -113,8 +131,10 @@ app.use("/api/bookings", bookingRoutes);
 app.use('/api/inquiries', inquiryRoutes);
 app.use('/api/agent', agentRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/companies", companyRoutes);
 
-
+app.use("/api/bookings",   protect, ensureCompany(true), bookingRoutes);
+app.use("/api/inquiries",  protect, ensureCompany(true), inquiriesRoutes)
 
 
 // Health Check Route

@@ -1,94 +1,223 @@
-import Booking from "../models/Booking.js";
+// controllers/bookingController.js
+import Joi from "joi";
+import { getCompanyModels } from "../utils/dbManager.js";
 import { sendBookingConfirmationEmail } from "../utils/emailService.js";
 import { generateBookingPDF } from "../utils/pdfService.js";
+
+/* ----------------------------- helpers ----------------------------- */
+const getId = (v) => (v && v._id ? v._id.toString() : v?.toString?.());
+const isOwnerOrAdmin = (booking, user) =>
+  getId(booking.agent) === user._id.toString() || user.role === "admin";
+
+// Accept company from header, query, or JWT user
+const getCompanyIdFromReq = (req) =>
+  req.headers["x-company-id"] ||
+  req.query.companyId ||
+  req.user?.company?._id ||
+  req.user?.company;
+
+const requireCompany = (req, res) => {
+  const companyId = getCompanyIdFromReq(req);
+  if (!companyId) {
+    res.status(400).json({
+      message:
+        "Company context missing. Include 'x-company-id' header or ensure req.user.company is populated.",
+    });
+    return null;
+  }
+  return companyId;
+};
+
+const createBookingSchema = Joi.object({
+  // Customer
+  customerName: Joi.string().min(2).required(),
+  customerEmail: Joi.string().email().required(),
+  contactNumber: Joi.string().min(6).required(),
+  passengers: Joi.number().integer().min(1).required(),
+  adults: Joi.number().integer().min(0).required(),
+  children: Joi.number().integer().min(0).required(),
+
+  // Package
+  package: Joi.string().min(1).required(),
+  packagePrice: Joi.number().min(0).required(),
+  additionalServices: Joi.array().items(Joi.string()).default([]),
+  totalAmount: Joi.number().min(0).required(),
+  paymentMethod: Joi.string()
+    .valid("credit_card", "cash", "bank_transfer")
+    .default("credit_card"),
+
+  // Dates
+  date: Joi.date().required(),
+  departureDate: Joi.date().required(),
+  returnDate: Joi.date().greater(Joi.ref("departureDate")).required(),
+
+  // Flight
+  departureCity: Joi.string().allow("", null),
+  arrivalCity: Joi.string().allow("", null),
+  flightClass: Joi.string()
+    .valid("economy", "business", "first")
+    .default("economy"),
+
+  // Hotel
+  hotelName: Joi.string().allow("", null),
+  roomType: Joi.string().allow("", null),
+  checkIn: Joi.date().allow("", null),
+  checkOut: Joi.date().allow("", null),
+
+  // Visa
+  visaType: Joi.string().default("umrah"),
+  passportNumber: Joi.string().allow("", null),
+  nationality: Joi.string().allow("", null),
+
+  // Transport
+  transportType: Joi.string()
+    .valid("bus", "car", "van", "private")
+    .default("bus"),
+  pickupLocation: Joi.string().allow("", null),
+
+  // Payment from UI (sanitized below)
+  cardNumber: Joi.string().allow("", null),
+  expiryDate: Joi.string().allow("", null),
+  cvv: Joi.string().allow("", null),
+  cardholderName: Joi.string().allow("", null),
+}).custom((value, helpers) => {
+  if (value.passengers !== value.adults + value.children) {
+    return helpers.error("any.invalid", {
+      message: "passengers must equal adults + children",
+    });
+  }
+  return value;
+}, "passenger consistency");
+
+const updateBookingSchema = Joi.object({
+  status: Joi.string().valid("pending", "confirmed", "cancelled").optional(),
+  approvalStatus: Joi.string()
+    .valid("pending", "approved", "rejected")
+    .optional(),
+  customerName: Joi.string().min(2).optional(),
+  customerEmail: Joi.string().email().optional(),
+}).min(1);
+
+const validate = (schema, payload) => {
+  const { error, value } = schema.validate(payload, {
+    abortEarly: false,
+    stripUnknown: true,
+  });
+  if (error) {
+    const details = error.details?.map((d) => d.message) ?? [error.message];
+    const err = new Error("Validation failed");
+    err.status = 400;
+    err.details = details;
+    throw err;
+  }
+  return value;
+};
+
+/* ----------------------------- controllers ----------------------------- */
 
 // @desc    Create new booking
 // @route   POST /api/bookings
 // @access  Private (logged-in user)
 export const createBooking = async (req, res) => {
   try {
-    const bookingData = {
-      // Customer Information
-      customerName: req.body.customerName,
-      customerEmail: req.body.customerEmail,
-      contactNumber: req.body.contactNumber,
-      passengers: req.body.passengers,
-      adults: req.body.adults,
-      children: req.body.children,
-      
-      // Package Information
-      package: req.body.package,
-      packagePrice: req.body.packagePrice,
-      additionalServices: req.body.additionalServices,
-      totalAmount: req.body.totalAmount,
-      paymentMethod: req.body.paymentMethod || 'credit_card',
-      
-      // Travel Dates
-      date: req.body.date,
-      departureDate: req.body.departureDate,
-      returnDate: req.body.returnDate,
-      
-      // Flight Information
-      flight: {
-        departureCity: req.body.departureCity,
-        arrivalCity: req.body.arrivalCity,
-        flightClass: req.body.flightClass || 'economy'
-      },
-      
-      // Hotel Information
-      hotel: {
-        hotelName: req.body.hotelName,
-        roomType: req.body.roomType,
-        checkIn: req.body.checkIn,
-        checkOut: req.body.checkOut
-      },
-      
-      // Visa Information
-      visa: {
-        visaType: req.body.visaType || 'umrah',
-        passportNumber: req.body.passportNumber,
-        nationality: req.body.nationality
-      },
-      
-      // Transport Information
-      transport: {
-        transportType: req.body.transportType || 'bus',
-        pickupLocation: req.body.pickupLocation
-      },
-      
-      // Payment Information
-      payment: {
-        cardNumber: req.body.cardNumber,
-        expiryDate: req.body.expiryDate,
-        cvv: req.body.cvv,
-        cardholderName: req.body.cardholderName
-      },
-      
-      // Agent and Grouping
-      agent: req.user._id,
-      customerGroup: req.body.customerEmail, // Use email for grouping
+    const companyId = requireCompany(req, res);
+    if (!companyId) return;
+
+    const { Booking: CompanyBooking } = await getCompanyModels(companyId);
+    const v = validate(createBookingSchema, req.body);
+
+    // sanitize payment (do NOT store full PAN or CVV)
+    const payment = {
+      method: v.paymentMethod || "credit_card",
+      cardLast4: v.cardNumber ? String(v.cardNumber).slice(-4) : undefined,
+      cardholderName: v.cardholderName || undefined,
+      expiryDate: v.expiryDate || undefined,
     };
 
-              const booking = await Booking.create(bookingData);
-          
-          // Send confirmation email to customer
-          try {
-            await sendBookingConfirmationEmail({
-              customerName: booking.customerName,
-              customerEmail: booking.customerEmail,
-              package: booking.package,
-              totalAmount: booking.totalAmount,
-              departureDate: booking.departureDate,
-              status: booking.status
-            });
-          } catch (emailError) {
-            console.error('Failed to send booking confirmation email:', emailError);
-            // Don't fail the booking creation if email fails
-          }
-          
-          res.status(201).json(booking);
+    const bookingData = {
+      // Customer
+      customerName: v.customerName,
+      customerEmail: v.customerEmail,
+      contactNumber: v.contactNumber,
+      passengers: v.passengers,
+      adults: v.adults,
+      children: v.children,
+
+      // Package
+      package: v.package,
+      packagePrice: v.packagePrice,
+      additionalServices: v.additionalServices ?? [],
+      totalAmount: v.totalAmount,
+      paymentMethod: v.paymentMethod || "credit_card",
+
+      // Dates
+      date: v.date,
+      departureDate: v.departureDate,
+      returnDate: v.returnDate,
+
+      // Flight
+      flight: {
+        departureCity: v.departureCity || "",
+        arrivalCity: v.arrivalCity || "",
+        flightClass: v.flightClass || "economy",
+      },
+
+      // Hotel
+      hotel: {
+        hotelName: v.hotelName || "",
+        roomType: v.roomType || "",
+        checkIn: v.checkIn || null,
+        checkOut: v.checkOut || null,
+      },
+
+      // Visa
+      visa: {
+        visaType: v.visaType || "umrah",
+        passportNumber: v.passportNumber || "",
+        nationality: v.nationality || "",
+      },
+
+      // Transport
+      transport: {
+        transportType: v.transportType || "bus",
+        pickupLocation: v.pickupLocation || "",
+      },
+
+      // Payment (sanitized)
+      payment,
+
+      // Agent + grouping
+      agent: req.user._id,
+      customerGroup: v.customerEmail,
+
+      // Defaults
+      status: "pending",
+      approvalStatus: "pending",
+    };
+
+    const booking = await CompanyBooking.create(bookingData);
+
+    // email (non-blocking)
+    try {
+      await sendBookingConfirmationEmail({
+        customerName: booking.customerName,
+        customerEmail: booking.customerEmail,
+        package: booking.package,
+        totalAmount: booking.totalAmount,
+        departureDate: booking.departureDate,
+        status: booking.status,
+      });
+    } catch (emailError) {
+      console.error("Failed to send booking confirmation email:", emailError);
+    }
+
+    res.status(201).json(booking);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    console.error("createBooking error:", error);
+    res.status(error.status || 400).json({
+      message: error.message || "Failed to create booking",
+      ...(error.details ? { details: error.details } : {}),
+    });
   }
 };
 
@@ -96,76 +225,120 @@ export const createBooking = async (req, res) => {
 // @route   GET /api/bookings
 // @access  Private/Admin
 export const getBookings = async (req, res) => {
-  const bookings = await Booking.find().populate("agent", "name email");
-  res.json(bookings);
+  try {
+    const companyId = requireCompany(req, res);
+    if (!companyId) return;
+
+    const { Booking: CompanyBooking } = await getCompanyModels(companyId);
+
+    // Optional filters: ?status=&agent=
+    const q = {};
+    if (req.query.status) q.status = req.query.status;
+    if (req.query.agent) q.agent = req.query.agent;
+
+    const bookings = await CompanyBooking.find(q)
+      .populate("agent", "name email")
+      .sort({ createdAt: -1 });
+
+    res.json(bookings);
+  } catch (error) {
+    console.error("getBookings error:", error);
+    res.status(500).json({ message: error.message || "Server error" });
+  }
 };
 
 // @desc    Get booking by ID
 // @route   GET /api/bookings/:id
 // @access  Private (owner or admin)
 export const getBookingById = async (req, res) => {
-  const booking = await Booking.findById(req.params.id).populate("agent", "name email");
-  if (!booking) {
-    return res.status(404).json({ message: "Booking not found" });
+  try {
+    const companyId = requireCompany(req, res);
+    if (!companyId) return;
+
+    const { Booking: CompanyBooking } = await getCompanyModels(companyId);
+    const booking = await CompanyBooking.findById(req.params.id).populate(
+      "agent",
+      "name email"
+    );
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    if (!isOwnerOrAdmin(booking, req.user)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    res.json(booking);
+  } catch (error) {
+    console.error("getBookingById error:", error);
+    res.status(500).json({ message: error.message || "Server error" });
   }
-  if (booking.agent.toString() !== req.user._id.toString() && req.user.role !== "admin") {
-    return res.status(403).json({ message: "Not authorized" });
-  }
-  res.json(booking);
 };
 
 // @desc    Update booking
 // @route   PUT /api/bookings/:id
 // @access  Private (Admin or Owner Agent)
 export const updateBooking = async (req, res) => {
-  const booking = await Booking.findById(req.params.id);
+  try {
+    const companyId = requireCompany(req, res);
+    if (!companyId) return;
 
-  if (!booking) return res.status(404).json({ message: "Booking not found" });
+    const { Booking: CompanyBooking } = await getCompanyModels(companyId);
+    const booking = await CompanyBooking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
 
-  // ✅ RBAC Check
-  if (req.user.role !== "admin" && booking.agent.toString() !== req.user._id.toString()) {
-    return res.status(403).json({ message: "Not authorized" });
-  }
-
-  booking.status = req.body.status || booking.status;
-  booking.customerName = req.body.customerName || booking.customerName;
-  booking.customerEmail = req.body.customerEmail || booking.customerEmail;
-
-  // Handle approval status based on status change
-  if (req.user.role === "admin") {
-    if (req.body.status === "confirmed") {
-      booking.approvalStatus = "approved";
-      console.log(`Admin ${req.user._id} approved booking ${booking._id}`);
-    } else if (req.body.status === "cancelled") {
-      booking.approvalStatus = "rejected";
-      console.log(`Admin ${req.user._id} rejected booking ${booking._id}`);
-    } else if (req.body.status === "pending") {
-      booking.approvalStatus = "pending";
-      console.log(`Admin ${req.user._id} set booking ${booking._id} to pending`);
+    if (!isOwnerOrAdmin(booking, req.user)) {
+      return res.status(403).json({ message: "Not authorized" });
     }
-  } else if (req.body.approvalStatus) {
-    booking.approvalStatus = req.body.approvalStatus;
-  }
 
-  const updatedBooking = await booking.save();
-  res.json(updatedBooking);
+    const v = validate(updateBookingSchema, req.body);
+
+    if (typeof v.customerName !== "undefined")
+      booking.customerName = v.customerName;
+    if (typeof v.customerEmail !== "undefined")
+      booking.customerEmail = v.customerEmail;
+
+    if (req.user.role === "admin") {
+      if (v.status === "confirmed") booking.approvalStatus = "approved";
+      if (v.status === "cancelled") booking.approvalStatus = "rejected";
+      if (v.status === "pending") booking.approvalStatus = "pending";
+    }
+    if (typeof v.status !== "undefined") booking.status = v.status;
+    if (typeof v.approvalStatus !== "undefined" && req.user.role !== "admin") {
+      booking.approvalStatus = v.approvalStatus;
+    }
+
+    const updated = await booking.save();
+    res.json(updated);
+  } catch (error) {
+    console.error("updateBooking error:", error);
+    res.status(error.status || 500).json({
+      message: error.message || "Server error",
+      ...(error.details ? { details: error.details } : {}),
+    });
+  }
 };
 
 // @desc    Delete booking
 // @route   DELETE /api/bookings/:id
 // @access  Private (Admin or Owner Agent)
 export const deleteBooking = async (req, res) => {
-  const booking = await Booking.findById(req.params.id);
+  try {
+    const companyId = requireCompany(req, res);
+    if (!companyId) return;
 
-  if (!booking) return res.status(404).json({ message: "Booking not found" });
+    const { Booking: CompanyBooking } = await getCompanyModels(companyId);
+    const booking = await CompanyBooking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
 
-  // ✅ RBAC Check
-  if (req.user.role !== "admin" && booking.agent.toString() !== req.user._id.toString()) {
-    return res.status(403).json({ message: "Not authorized" });
+    if (!isOwnerOrAdmin(booking, req.user)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    await booking.deleteOne();
+    res.json({ message: "Booking removed" });
+  } catch (error) {
+    console.error("deleteBooking error:", error);
+    res.status(500).json({ message: error.message || "Server error" });
   }
-
-  await booking.deleteOne();
-  res.json({ message: "Booking removed" });
 };
 
 // @desc    Approve booking
@@ -173,17 +346,23 @@ export const deleteBooking = async (req, res) => {
 // @access  Private (Admin only)
 export const approveBooking = async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id);
+    const companyId = requireCompany(req, res);
+    if (!companyId) return;
+
+    const { Booking: CompanyBooking } = await getCompanyModels(companyId);
+    const booking = await CompanyBooking.findById(req.params.id);
     if (!booking) return res.status(404).json({ message: "Booking not found" });
 
     booking.approvalStatus = "approved";
     booking.status = "confirmed";
-    const updatedBooking = await booking.save();
-    
-    res.json({ success: true, data: updatedBooking });
+    const updated = await booking.save();
+
+    res.json({ success: true, data: updated });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("approveBooking error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
@@ -192,17 +371,23 @@ export const approveBooking = async (req, res) => {
 // @access  Private (Admin only)
 export const rejectBooking = async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id);
+    const companyId = requireCompany(req, res);
+    if (!companyId) return;
+
+    const { Booking: CompanyBooking } = await getCompanyModels(companyId);
+    const booking = await CompanyBooking.findById(req.params.id);
     if (!booking) return res.status(404).json({ message: "Booking not found" });
 
     booking.approvalStatus = "rejected";
     booking.status = "cancelled";
-    const updatedBooking = await booking.save();
-    
-    res.json({ success: true, data: updatedBooking });
+    const updated = await booking.save();
+
+    res.json({ success: true, data: updated });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("rejectBooking error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
@@ -211,9 +396,16 @@ export const rejectBooking = async (req, res) => {
 // @access  Private
 export const getMyBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({ agent: req.user._id }).populate("agent", "name email");
+    const companyId = requireCompany(req, res);
+    if (!companyId) return;
+
+    const { Booking: CompanyBooking } = await getCompanyModels(companyId);
+    const bookings = await CompanyBooking.find({ agent: req.user._id })
+      .populate("agent", "name email")
+      .sort({ createdAt: -1 });
     res.json(bookings);
   } catch (error) {
+    console.error("getMyBookings error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -223,43 +415,35 @@ export const getMyBookings = async (req, res) => {
 // @access  Private (owner or admin)
 export const downloadBookingPDF = async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id).populate("agent", "name email");
-    
-    if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
+    const companyId = requireCompany(req, res);
+    if (!companyId) return;
 
-    // Check authorization
-    let agentId = null;
-    if (booking.agent) {
-      // Handle both populated and non-populated agent references
-      agentId = booking.agent._id ? booking.agent._id.toString() : booking.agent.toString();
-    }
-    
-    console.log('PDF Authorization Check:', {
-      bookingAgentId: agentId,
-      userId: req.user._id.toString(),
-      userRole: req.user.role,
-      isAuthorized: agentId === req.user._id.toString() || req.user.role === "admin"
-    });
-    
-    if (agentId !== req.user._id.toString() && req.user.role !== "admin") {
+    const { Booking: CompanyBooking } = await getCompanyModels(companyId);
+    const booking = await CompanyBooking.findById(req.params.id).populate(
+      "agent",
+      "name email"
+    );
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    if (!isOwnerOrAdmin(booking, req.user)) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // Generate PDF
-    const pdfBuffer = await generateBookingPDF(booking);
+    const pdfBuffer = await generateBookingPDF(
+      booking,
+      // Pass company object if your PDF needs it; fallback to minimal context
+      req.user.company || { _id: companyId }
+    );
 
-    // Set response headers
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="booking-${booking._id || 'unknown'}.pdf"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
-
-    // Send PDF
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="booking-${booking._id || "unknown"}.pdf"`
+    );
+    res.setHeader("Content-Length", pdfBuffer.length);
     res.send(pdfBuffer);
-
   } catch (error) {
-    console.error('PDF generation error:', error);
+    console.error("PDF generation error:", error);
     res.status(500).json({ message: "Error generating PDF" });
   }
 };

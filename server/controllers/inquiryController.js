@@ -1,12 +1,16 @@
 import Inquiry from "../models/Inquiry.js";
+import { getCompanyModels } from "../utils/dbManager.js";
 import { sendInquiryNotificationEmail, sendInquiryResponseEmail } from "../utils/emailService.js";
 
 // Create a new inquiry
 export const createInquiry = async (req, res) => {
   try {
+    // Get company-specific models
+    const { Inquiry: CompanyInquiry } = await getCompanyModels(req.user.company._id);
+    
     const { name, email, phone, subject, message, priority, relatedBooking } = req.body;
     
-    const inquiry = new Inquiry({ 
+    const inquiry = new CompanyInquiry({ 
       name, 
       email, 
       phone, 
@@ -42,12 +46,15 @@ export const createInquiry = async (req, res) => {
 // Get all inquiries (Admin sees all, Agent sees only theirs)
 export const getInquiries = async (req, res) => {
   try {
+    // Get company-specific models
+    const { Inquiry: CompanyInquiry } = await getCompanyModels(req.user.company._id);
+    
     let filter = {};
     if (req.user.role === "agent") {
       filter = { assignedAgent: req.user._id };
     }
 
-    const inquiries = await Inquiry.find(filter)
+    const inquiries = await CompanyInquiry.find(filter)
       .populate("assignedAgent", "name email")
       .sort({ createdAt: -1 }); // latest first
 
@@ -61,7 +68,10 @@ export const getInquiries = async (req, res) => {
 // Get inquiry by ID
 export const getInquiryById = async (req, res) => {
   try {
-    const inquiry = await Inquiry.findById(req.params.id).populate("assignedAgent", "name email");
+    // Get company-specific models
+    const { Inquiry: CompanyInquiry } = await getCompanyModels(req.user.company._id);
+    
+    const inquiry = await CompanyInquiry.findById(req.params.id).populate("assignedAgent", "name email");
 
     if (!inquiry) return res.status(404).json({ success: false, message: "Inquiry not found" });
 
@@ -80,8 +90,11 @@ export const getInquiryById = async (req, res) => {
 // Update inquiry
 export const updateInquiry = async (req, res) => {
   try {
+    // Get company-specific models
+    const { Inquiry: CompanyInquiry } = await getCompanyModels(req.user.company._id);
+    
     const { status, assignedAgent } = req.body;
-    const inquiry = await Inquiry.findById(req.params.id);
+    const inquiry = await CompanyInquiry.findById(req.params.id);
     if (!inquiry) return res.status(404).json({ success: false, message: "Inquiry not found" });
 
     // Agents can update only their inquiries
@@ -103,8 +116,11 @@ export const updateInquiry = async (req, res) => {
 // Add a response
 export const addResponse = async (req, res) => {
   try {
+    // Get company-specific models
+    const { Inquiry: CompanyInquiry } = await getCompanyModels(req.user.company._id);
+    
     const { message } = req.body;
-    const inquiry = await Inquiry.findById(req.params.id);
+    const inquiry = await CompanyInquiry.findById(req.params.id);
     if (!inquiry) return res.status(404).json({ success: false, message: "Inquiry not found" });
 
     inquiry.responses.push({ message, responder: req.user._id });
@@ -133,7 +149,10 @@ export const addResponse = async (req, res) => {
 // Delete inquiry (Admin only)
 export const deleteInquiry = async (req, res) => {
   try {
-    const inquiry = await Inquiry.findByIdAndDelete(req.params.id);
+    // Get company-specific models
+    const { Inquiry: CompanyInquiry } = await getCompanyModels(req.user.company._id);
+    
+    const inquiry = await CompanyInquiry.findByIdAndDelete(req.params.id);
     if (!inquiry) return res.status(404).json({ success: false, message: "Inquiry not found" });
 
     res.json({ success: true, message: "Inquiry deleted successfully" });
@@ -146,7 +165,10 @@ export const deleteInquiry = async (req, res) => {
 // Approve inquiry
 export const approveInquiry = async (req, res) => {
   try {
-    const inquiry = await Inquiry.findById(req.params.id);
+    // Get company-specific models
+    const { Inquiry: CompanyInquiry } = await getCompanyModels(req.user.company._id);
+    
+    const inquiry = await CompanyInquiry.findById(req.params.id);
     if (!inquiry) return res.status(404).json({ success: false, message: "Inquiry not found" });
 
     inquiry.approvalStatus = "approved";
@@ -163,7 +185,10 @@ export const approveInquiry = async (req, res) => {
 // Reject inquiry
 export const rejectInquiry = async (req, res) => {
   try {
-    const inquiry = await Inquiry.findById(req.params.id);
+    // Get company-specific models
+    const { Inquiry: CompanyInquiry } = await getCompanyModels(req.user.company._id);
+    
+    const inquiry = await CompanyInquiry.findById(req.params.id);
     if (!inquiry) return res.status(404).json({ success: false, message: "Inquiry not found" });
 
     inquiry.approvalStatus = "rejected";

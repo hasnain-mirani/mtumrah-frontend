@@ -1,58 +1,25 @@
+// middleware/authMiddleware.js
 import jwt from "jsonwebtoken";
-import asyncHandler from "express-async-handler";
 import User from "../models/User.js";
-import Agent from "../models/Agent.js";
 
-export const protect = asyncHandler(async (req, res, next) => {
-  let token;
-  if (req.headers.authorization?.startsWith("Bearer")) {
-    token = req.headers.authorization.split(" ")[1];
-  }
-  if (!token) {
-    res.status(401);
-    throw new Error("Not authorized, token missing");
-  }
-
+export const protect = async (req, res, next) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Try to find user first (admin)
-    let user = await User.findById(decoded.id).select("-passwordHash");
-    if (user) {
-      req.user = user;
-      next();
-      return;
-    }
-    
-    // If not found in User model, try Agent model
-    let agent = await Agent.findById(decoded.id).select("-passwordHash");
-    if (agent) {
-      req.user = agent;
-      next();
-      return;
-    }
-    
-    throw new Error("User not found");
-  } catch (error) {
-    res.status(401);
-    throw new Error("Not authorized, token failed");
-  }
-});
+    const auth = req.headers.authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+    if (!token) return res.status(401).json({ message: "No token" });
 
-export const admin = (req, res, next) => {
-  if (req.user && req.user.role === "admin") {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // attach minimal user (add .company if you store it)
+    req.user = await User.findById(decoded.id).select("_id name email role company").lean();
+    if (!req.user) return res.status(401).json({ message: "User not found" });
+
     next();
-  } else {
-    res.status(403);
-    throw new Error("Not authorized as admin");
+  } catch (e) {
+    return res.status(401).json({ message: "Not authorized" });
   }
 };
 
-export const authorizeRoles = (...roles) => {
-  return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ message: "Forbidden" });
-    }
-    next();
-  };
+export const admin = (req, res, next) => {
+  if (req.user?.role === "admin") return next();
+  return res.status(403).json({ message: "Admin only" });
 };
