@@ -1,10 +1,10 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-// import { protect, admin } from "./middleware/authMiddleware.js";
-import { ensureCompany } from "./middleware/companyContext.js";
+ import { protect } from "./middleware/authMiddleware.js";
+
 // Load environment variables
-import bookingRoutes from "./routes/bookings.js";
+import bookingRoutes from "./routes/bookingRoutes.js";
 // import inquiriesRoutes from "./routes/inquiries.js";
 dotenv.config();
 import morgan from "morgan";
@@ -134,7 +134,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/companies", companyRoutes);
 
 app.use("/api/bookings",   protect, ensureCompany(true), bookingRoutes);
-app.use("/api/inquiries",  protect, ensureCompany(true), inquiriesRoutes)
+app.use("/api/inquiries",  protect, ensureCompany(true), inquiryRoutes)
 
 
 // Health Check Route
